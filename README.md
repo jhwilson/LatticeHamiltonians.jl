@@ -1,4 +1,4 @@
-# LatticeHamiltonians
+# LatticeHamiltonians.jl
 
 [![Build Status](https://github.com/jhwilson/LatticeHamiltonians.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/jhwilson/LatticeHamiltonians.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
@@ -148,3 +148,36 @@ This example creates a lattice Hamiltonian using the `@lattice_hamiltonian` macr
 4. `Ls = [50,50]`: This specifies the dimensions of the lattice, in this case, a 50x50 square lattice.
 
 The `@lattice_hamiltonian` macro then constructs a function that can apply the resulting Hamiltonian to any input state (a vector). The Hamiltonian is not explicitly stored as a matrix, but instead is represented as a function that performs certain operations on the input state, saving memory and allowing for more efficient computations. This approach is particularly beneficial for large-scale systems and high-dimensional lattices.
+
+# Developing the front-end
+
+Taking the above, we want to modify how Julia interprets code in order to make the above easier for the user.
+The end result should be a call that creates an object of type `LatticeHamiltonian`
+
+```julia
+using LatticeHamiltonians
+
+H = @lattice_hamiltonian begin
+    orbitals [1.0, 1.0]
+    (0,0) -> [0 1 ; 1 0]
+    (1,0) -> [0 0 ; t 0]
+    (-1,0) -> [0 t ; 0 0]
+    (0,1) -> [0 0 ; t 0]
+    (0,-1) -> [0 t ; 0 0]
+    t = 1.0
+    Ls = [50, 50]
+end
+```
+
+The major task is going to be getting the `macro` `@lattice_hamiltonian` to interpret this new syntax that we make up and then build the Hamiltonian like normal.
+
+With this all set up, we can write a little note on how to use the package and launch it!
+
+Key things to learn:
+- Metaprogramming in Julia.
+- Working within VSCode with Julia
+- Using Git and Github: **Always work on your own branch and then merge it into the main branch when everything works!**
+- Making basic `@macros`.
+- Working with `Expr` which are Julia expressions that we can manipulate.
+- Difference between `Symbol` and `Expr`
+- Compile-time and run-time (These are different in Julia!).
