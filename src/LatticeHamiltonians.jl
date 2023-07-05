@@ -189,18 +189,22 @@ macro lattice_hamiltonian(ex)
     # apply = make_apply(params, V, T, dim)
     # H = LatticeHamiltonian(A, B, d, L, params, r, apply)
     # mult_expr = make_multiply(H)
+
+    # From Kimberly's macro put all of the front matter here
+    
     return esc(quote
-        $(ex)
-        dim = maximum(length(k) for k in keys(T))
-        d = length(V)
-        A = SMatrix{dim, dim, Float64}(I)
-        B = SMatrix{dim, dim, Float64}(I)
-        L = MVector{dim, Int}(Ls)
-        r = [SVector{dim}(zeros(Float64, dim)) for i = 1:d]
-        apply = eval(LatticeHamiltonians.make_apply(params, V, T, dim))
-        H = LatticeHamiltonian(A, B, d, L, params, r, apply)
-        mult_expr = LatticeHamiltonians.make_multiply(H)
-        eval(mult_expr)
+        $(ex) #This will be gone
+        dim = maximum(length(k) for k in keys(T)) #moved out of quote block
+        d = length(V) #moved out quote block
+        A = SMatrix{dim, dim, Float64}(I) #moved out of quote block
+        B = SMatrix{dim, dim, Float64}(I) #moved out of quote block
+        L = MVector{dim, Int}(Ls) #moved out of quote block
+        r = [SVector{dim}(zeros(Float64, dim)) for i = 1:d] #moved out quote block
+        apply = eval(LatticeHamiltonians.make_apply(params, V, T, dim)) #moved out of quote block
+        H = LatticeHamiltonian(A, B, d, L, params, r, apply) #moved out of quote block (??)
+        mult_expr = LatticeHamiltonians.make_multiply(H) # moved out of quote block
+        eval(mult_expr) # replaced with $mult_expr
+        # end with $H
     end)
 end
 
