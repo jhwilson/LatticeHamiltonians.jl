@@ -90,7 +90,7 @@ function loop_periodic(s, hop, ex, j, flag)
         for $(Symbol("$(s)$j")) = $(-m + 1):N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
         end;
-        ind2 += d * cumprod(N[1:j], 1);)
+        ind2 += d * cumprod(N[1:j], 1))
     elseif m > 0
         if (flag)
             expr = :(for $(Symbol("$(s)$j")) = 1:(N[$j]-$m)
@@ -102,7 +102,7 @@ function loop_periodic(s, hop, ex, j, flag)
         for $(Symbol("$(s)$j")) = (N[$j]-$(m - 1)):N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
         end;
-        ind2 += d * cumprod(N[1:j], 1);)
+        ind2 += d * cumprod(N[1:j], 1))
     else
         expr = :(for $(Symbol("$(s)$j")) = 1:N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
