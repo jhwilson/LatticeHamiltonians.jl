@@ -464,7 +464,31 @@ function fnzi(matrix)
             end
         end
     end
-    return i, j, k
+    return (rows = rows, cols = cols, vals = vals)
+end
+
+"""
+    foreach_element(f :: Function, expr::Expr)
+
+Generic iteration over elements of a matrix or vector expression.
+`f` should be a function of the form `f(ri, ci, elem)`
+where `ri` and `ci` are the row and column indices of the element,
+and `elem` is the value.
+"""
+function foreach_element(f :: Function, expr::Expr)
+    if isexpr(expr, :vcat)
+    for (ri, row) in enumerate(expr.args)
+        for (ci, elem) in enumerate(row.args)
+            f(ri, ci, elem)
+        end
+    end
+  elseif isexpr(expr, :vect)
+    for (i, elem) in enumerate(expr.args)
+            f(i, i, elem)
+    end
+  else
+    throw(ArgumentError("Expected a matrix or vector"))
+  end
 end
 
 end
