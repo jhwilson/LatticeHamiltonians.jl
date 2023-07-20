@@ -84,8 +84,7 @@ function loop_periodic(s, hop, ex, j, flag)
             expr = :(for $sj = 1:$(-m)
                 $(loop_periodic(s, hop, ex, j - 1))
             end;)
-        expr = :(
-            inc = 
+            expr = :(
         ind2 -= d * cumprod(N[1:j], 1); #NB: cumprod and prod should both work left to right, also use Arrayview here? subarray?
         for $(Symbol("$(s)$j")) = $(-m + 1):N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
