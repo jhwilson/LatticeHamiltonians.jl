@@ -85,24 +85,24 @@ function loop_periodic(s, hop, ex, j, flag)
                 $(loop_periodic(s, hop, ex, j - 1))
             end;)
             expr = :(
-        end;
+        end
         ind2 -= d * cumprod(N[1:j], 1); #NB: cumprod and prod should both work left to right, also use Arrayview here? subarray?
         for $(Symbol("$(s)$j")) = $(-m + 1):N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
         end;
-        ind2 += d * cumprod(N[1:j], 1));
+        ind2 += d * cumprod(N[1:j], 1);)
     elseif m > 0
         if (flag)
             expr = :(for $(Symbol("$(s)$j")) = 1:(N[$j]-$m)
                 $(loop_periodic(s, hop, ex, j - 1))
             end;)
             expr = :(
-        end;
+        end
         ind2 -= d * cumprod(N[1:j], 1);
         for $(Symbol("$(s)$j")) = (N[$j]-$(m - 1)):N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
         end;
-        ind2 += d * cumprod(N[1:j], 1));
+        ind2 += d * cumprod(N[1:j], 1);)
     else
         expr = :(for $(Symbol("$(s)$j")) = 1:N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
