@@ -72,7 +72,7 @@ loop_periodic_diag(dim, d, ex; s = :n) = :(ind1 = 0;
     $(loop_periodic(s, zeros(Int, dim), ex, dim)))
 
     
-function loop_periodic(s, hop, ex, j)
+function loop_periodic(s, hop, ex, j, flag)
     if j == 0
         return ex
     end
