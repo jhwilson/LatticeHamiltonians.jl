@@ -49,8 +49,7 @@ function make_hop_expr(is, js, Vs, dim; s = :n)
     return Expr(:block, expr_array...)
 end
 
-# These functions recursively generate an expression for calculating the site index 
-# in the 1D unwrapped lattice from the coordinates of the site in the original lattice.
+# These functions recursively generate an expression for calculating the site 
 # `site_expr` is overloaded for different numbers of arguments. 
 site_expr(hops) = site_expr(hops, 1)
 
@@ -166,46 +165,98 @@ function make_multiply(H)
 end
 
 # `lattice_hamiltonian` is a macro that provides a convenient interface for defining a Hamiltonian. 
-# The user can provide an expression that defines the parameters for the potential and hopping terms (params, V, T, Ls).
+# The user can provide an expression that defines the parameters for the potential and hopping terms (params, V, T, L).
 # The macro generates code that constructs a `LatticeHamiltonian` object and a function to apply the Hamiltonian.
-macro lattice_hamiltonian(ex)
-    # V = ComplexF64[0.0,0.0]
-    # T = Dict([0] => ([1,2],[2,1],ComplexF64[1.0, 1.0]),
-    # [1] => ([2], [1], [:(1.0 * t)]),
-    # [-1] => ([1], [2], [:(1.0 * t)]))
-    # params = Dict{Symbol,ComplexF64}(:t => 1.0)
-    # L = [10]
-    # params = ... 
-    # V = ... 
-    # T = ...
-    # L = ...
-    # eval(ex)
-    # dim = maximum(length(k) for k in keys(T))
-    # d = length(V)
-    # A = SMatrix{dim, dim, Float64}(I)
-    # B = SMatrix{dim, dim, Float64}(I)
-    # L = MVector{dim, Int}(Ls)
-    # r = [SVector{dim}(zeros(Float64, dim)) for i = 1:d]
-    # apply = make_apply(params, V, T, dim)
-    # H = LatticeHamiltonian(A, B, d, L, params, r, apply)
-    # mult_expr = make_multiply(H)
 
-    # From Kimberly's macro put all of the front matter here
+
+macro lattice_hamiltonian(input)
+    exprL = :()
+    exprV = :() 
+    hops = Vector()  # Store all hopping expressions in a vector
+    params = Dict{Symbol, ComplexF64}() #Initialize dictionary
+
+    for ex in input.args # loops over exprL/O/hops/params
+        try
+            if ex.args[1] == :L
+                exprL = ex
+            elseif ex.args[1] == :V
+                exprV = ex
+            elseif ex.head == :(->)
+                push!(hops, ex)  # Add hopping expression to the vector
+            elseif ex.head == :(=)
+                param_key = ex.args[1]
+                param_val = eval(ex.args[2])
+                params[param_key] = param_val #adds it to the dictionary
+            end
+        catch e
+        end
+    end
+
+    V = eval(exprV.args[2])
+    d = length(V)
+    L = eval(exprL.args[2])
+    dim = length(L)
+    if exprL.args[1] != :L
+        error("Invalid input. Format should be :L = [nums].")
+    end
+    if !(isa(L, Vector) && all(isinteger, L))
+        error("Invalid input. Expected a vector of integers.")
+    end
+    L = MVector{length(L)}(L)
+    if exprV.args[1] != :V
+        error("Invalid input. Format should be :V = [nums].")
+    end
+    if !(isa(V, Vector) && all(x -> typeof(x) == ComplexF64, V))
+        error("Invalid input. Expected a vector of floats.")
+    end 
+    if isempty(hops)
+        error("Invalid input. Expected at least one hopping expression.")
+    end
     
-    return esc(quote
-        $(ex) #This will be gone
-        dim = maximum(length(k) for k in keys(T)) #moved out of quote block
-        d = length(V) #moved out quote block
-        A = SMatrix{dim, dim, Float64}(I) #moved out of quote block
-        B = SMatrix{dim, dim, Float64}(I) #moved out of quote block
-        L = MVector{dim, Int}(Ls) #moved out of quote block
-        r = [SVector{dim}(zeros(Float64, dim)) for i = 1:d] #moved out quote block
-        apply = eval(LatticeHamiltonians.make_apply(params, V, T, dim)) #moved out of quote block
-        H = LatticeHamiltonian(A, B, d, L, params, r, apply) #moved out of quote block (??)
-        mult_expr = LatticeHamiltonians.make_multiply(H) # moved out of quote block
-        eval(mult_expr) # replaced with $mult_expr
-        # end with $H
+    
+    T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{Union{Expr,Symbol,ComplexF64}}}}()
+    for i in eachindex(hops) 
+        hop = hops[i] 
+        Base.remove_linenums!(hop)
+        args1 = eval(hop.args[1]) |> collect
+        m = hop.args[2].args[1]
+        y, j, h = fnzi(m)
+        T[args1] = (y, j, h)
+    end
+     
+
+    A = SMatrix{dim, dim, Float64}(I) 
+    B = SMatrix{dim, dim, Float64}(I * 2 * pi)
+    r = [SVector{dim}(zeros(Float64, dim)) for i = 1:d]
+    apply = eval(make_apply(params, V, T, dim))
+    H = LatticeHamiltonian(A, B, d, L, params, r, apply)
+    mult_expr = LatticeHamiltonians.make_multiply(H)
+    esc(quote
+        $mult_expr
+        $H
     end)
+end
+
+function fnzi(matrix)
+    rows = 0
+    cols = 0
+    i = Int[]
+    j = Int[]
+    k = Vector{Union{ComplexF64, Symbol, Expr}}(undef, 0)
+
+    for (ri, row) in enumerate(matrix.args)
+        cols = max(cols, length(row.args))
+        for (ci, elem) in enumerate(row.args)
+            if elem != 0
+                push!(i, ri)
+                push!(j, ci)
+                if elem isa Number #7_6 added ifelse 
+                    push!(k, ComplexF64(elem))
+                end
+            end
+        end
+    end
+    return i, j, k
 end
 
 end
