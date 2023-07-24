@@ -445,4 +445,26 @@ function foreach_element(f :: Function, expr::Expr)
   end
 end
 
+function fnzi(matrix)
+    rows = 0
+    cols = 0
+    i = Int[]
+    j = Int[]
+    k = Vector{Union{ComplexF64, Symbol, Expr}}(undef, 0)
+
+    for (ri, row) in enumerate(matrix.args)
+        cols = max(cols, length(row.args))
+        for (ci, elem) in enumerate(row.args)
+            if elem != 0
+                push!(i, ri)
+                push!(j, ci)
+                if elem isa Number #7_6 added ifelse 
+                    push!(k, ComplexF64(elem))
+                end
+            end
+        end
+    end
+    return i, j, k
+end
+
 end
