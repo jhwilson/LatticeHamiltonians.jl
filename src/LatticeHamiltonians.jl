@@ -3,8 +3,10 @@
 module LatticeHamiltonians
 
 using StaticArrays, LinearAlgebra
+import LinearAlgebra: mul!
+import Base: *
 
-export LatticeHamiltonian
+export LatticeHamiltonian, mul!, *
 export @lattice_hamiltonian
 
 # This function constructs the diagonal part of the Hamiltonian matrix
@@ -38,6 +40,8 @@ function make_hop_expr(is, js, Vs, dim; s = :n)
         V = Vs[idx]
         if typeof(V) <: ComplexF64  
             expr_array[idx] = (V!=zero(ComplexF64)) ? :(ψout[ind1 + $i] += $V * ψin[ind2 + $j]) : :(zero(ComplexF64))
+        elseif typeof(V) <: Symbol
+            expr_array[idx] = :(ψout[ind1 + $i] += $V * ψin[ind2 + $j])
         elseif typeof(V) <: Function
             ss = [Symbol("$(s)$m") for m = 1:dim]
             expr_array[idx] = :(ψout[ind1 + $i] += $V($(ss...)) * ψin[ind2 + $j])
@@ -144,6 +148,7 @@ function make_apply(params, V, T, dim)
     end
 end
 
+# BELOW IS DEPRACATED BUT NOT DELETED YET
 # `make_multiply` function generates an `Expr` that defines a function to apply the Hamiltonian
 # to an input wavefunction using the method defined by `make_apply`.
 function make_multiply(H)
@@ -162,6 +167,16 @@ function make_multiply(H)
             H.apply!(ψout, ψin, d, dim, N, $(keys(H.params)...))
         end
     end
+end
+
+function mul!(ψout::AbstractArray, H::LatticeHamiltonian, ψin::AbstractArray)
+    H.apply!(ψout, ψin, H.d, length(H.L), H.L, values(H.params)...)
+end
+
+function *(H::LatticeHamiltonian, ψ::AbstractVector)
+    v = copy(ψ)
+    mul!(v, H, ψ)
+    return v
 end
 
 # `lattice_hamiltonian` is a macro that provides a convenient interface for defining a Hamiltonian. 
@@ -218,7 +233,7 @@ macro lattice_hamiltonian(input)
     for i in eachindex(hops) 
         hop = hops[i] 
         Base.remove_linenums!(hop)
-        args1 = eval(hop.args[1]) |> collect
+        args1 = vec(eval(hop.args[1]) |> collect)
         m = hop.args[2].args[1]
         y, j, h = fnzi(m)
         T[args1] = (y, j, h)
@@ -230,11 +245,9 @@ macro lattice_hamiltonian(input)
     r = [SVector{dim}(zeros(Float64, dim)) for i = 1:d]
     apply = eval(make_apply(params, V, T, dim))
     H = LatticeHamiltonian(A, B, d, L, params, r, apply)
-    mult_expr = LatticeHamiltonians.make_multiply(H)
-    esc(quote
-        $mult_expr
+    quote
         $H
-    end)
+    end
 end
 
 function fnzi(matrix)
@@ -252,6 +265,8 @@ function fnzi(matrix)
                 push!(j, ci)
                 if elem isa Number #7_6 added ifelse 
                     push!(k, ComplexF64(elem))
+                else
+                    push!(k, elem)
                 end
             end
         end
