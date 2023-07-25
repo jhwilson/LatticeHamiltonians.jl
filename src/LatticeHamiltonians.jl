@@ -73,35 +73,30 @@ loop_periodic_diag(dim, d, ex; s = :n) = :(ind1 = 0;
     $(loop_periodic(s, zeros(Int, dim), ex, dim)))
 
     
-function loop_periodic(s, hop, ex, j, flag)
+function loop_periodic(s, hop, ex, j)
     if j == 0
         return ex
     end
     m::Int = hop[j]
     if m < 0
         sj = Symbol("$(s)$j")
-        if (flag)
-            expr = :(for $sj = 1:$(-m)
-                $(loop_periodic(s, hop, ex, j - 1))
-            end;)
-        expr = :(
-            inc = 
-        ind2 -= d * cumprod(N[1:j], 1); #NB: cumprod and prod should both work left to right, also use Arrayview here? subarray?
+        expr = :(for $sj = 1:$(-m)
+            $(loop_periodic(s, hop, ex, j - 1))
+        end;
+        ind2 -= d * N[$j]^$j;
         for $(Symbol("$(s)$j")) = $(-m + 1):N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
         end;
-        ind2 += d * cumprod(N[1:j], 1);
+        ind2 += d * N[$j]^$j)
     elseif m > 0
-        if (flag)
-            expr = :(for $(Symbol("$(s)$j")) = 1:(N[$j]-$m)
-                $(loop_periodic(s, hop, ex, j - 1))
-            end;)
-        expr = :(
-        ind2 -= d * cumprod(N[1:j], 1);
+        expr = :(for $(Symbol("$(s)$j")) = 1:(N[$j]-$m)
+            $(loop_periodic(s, hop, ex, j - 1))
+        end;
+        ind2 -= d * N[$j]^$j;
         for $(Symbol("$(s)$j")) = (N[$j]-$(m - 1)):N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
         end;
-        ind2 += d * cumprod(N[1:j], 1))
+        ind2 += d * N[$j]^$j)
     else
         expr = :(for $(Symbol("$(s)$j")) = 1:N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
