@@ -2,11 +2,12 @@
 # for constructing and applying Hamiltonians on lattice systems.
 module LatticeHamiltonians
 
-using StaticArrays, LinearAlgebra
+using StaticArrays, LinearAlgebra, SparseArrays
+import SparseArrays: sparse
 import LinearAlgebra: mul!
 import Base: *
 
-export LatticeHamiltonian, mul!, *
+export LatticeHamiltonian, mul!, *, sparse
 export @lattice_hamiltonian
 
 # This function constructs the diagonal part of the Hamiltonian matrix
@@ -142,8 +143,65 @@ struct LatticeHamiltonian{real_dim, lattice_dim, F}
     d::Int
     L::MVector{lattice_dim, Int}
     params::Dict{Symbol, ComplexF64}
+    T::Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{Union{Expr, Symbol, ComplexF64}}}}
+    V::Vector{Union{Expr, Symbol, ComplexF64}}
     r::Vector{SVector{real_dim,Float64}}
     apply!::F
+end
+
+function countnz(H::LatticeHamiltonian)
+    vol = prod(H.L)
+    nz = H.d 
+    for t = H.T
+        nz += length(t[2][1])
+    end
+    nz *= vol
+    return nz
+end
+
+function sitenumber(r, H::LatticeHamiltonian)
+    dim = length(H.L)
+    sitenum = r[dim]
+    for j = 1:(dim - 1)
+        sitenum = r[dim - j] + sitenum * H.L[dim-j]
+    end
+    return 1 + sitenum 
+end
+
+function sparse(H::LatticeHamiltonian)
+    nz = countnz(H)
+    ivals = Array{Int64}(undef, nz)
+    jvals = Array{Int64}(undef, nz)
+    hvals = Array{ComplexF64}(undef, nz)
+    ii = 1
+    R = CartesianIndices(Tuple(0:(H.L[j]-1) for j=eachindex(H.L)))
+    nhop = Vector{Int64}(undef, length(H.L))
+    for p = H.params
+        eval(:( $(p[1]) = $(p[2])))
+    end
+    for n = R
+        sitenum = sitenumber(n, H)
+        for σ = 1:H.d
+            r = H.d * (sitenum - 1) + σ
+            ivals[ii] = r
+            jvals[ii] = r
+            hvals[ii] = eval(H.V[σ])
+            ii+=1
+        end
+        for t = H.T
+            for i = eachindex(nhop)
+                nhop[i] = mod(n[i] + t[1][i], H.L[i])
+            end
+            sitenum_hop = sitenumber(nhop, H)
+            for σ = eachindex(t[2][1])
+                ivals[ii] = H.d * (sitenum_hop - 1) + t[2][1][σ]
+                jvals[ii] = H.d * (sitenum - 1) + t[2][2][σ]
+                hvals[ii] = eval(t[2][3][σ])
+                ii+=1
+            end
+        end
+    end
+    return dropzeros(sparse(ivals,jvals,hvals))
 end
 
 # `make_apply` function generates an `Expr` that defines a function to apply the Hamiltonian
