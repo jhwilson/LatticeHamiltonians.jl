@@ -75,33 +75,42 @@ loop_periodic(hops, ex; s = :n) = :(ind1 = 0;
 loop_periodic_diag(dim, d, ex; s = :n) = :(ind1 = 0;  
     $(loop_periodic(s, zeros(Int, dim), ex, dim)))
 
-    
+
+# The variables Lprod1, Lprod2, ... are pre-computed as L[1], L[1]*L[2], ...
+# These are used to make the linear index after the index loops around
+# e.g., d = 1, ind = i1 + (i2 - 1) * L[1] + (i3 - 1) * L[1] * L[2] + ...
+# if i3 = L[3] and we increment 
+# i3 -> i3 + 1 mod1 L[3], then when i3 = L[3]
+# ind = i1 + (i2 - 1) * L[1] + (L[3] - 1) * L[1] * L[2]
+# ind -> ind + L[1] * L[2] - L[1] * L[2] * L[3]
+# The subtraction of Lprod3 = L[1] * L[2] * L[3] is what gives periodic BCs
 function loop_periodic(s, hop, ex, j)
     if j == 0
         return ex
     end
     m::Int = hop[j]
+    sj = Symbol("$(s)$j")
+    Lprodj = Symbol("Lprod$j")
     if m < 0
-        sj = Symbol("$(s)$j")
         expr = :(for $sj = 1:$(-m)
             $(loop_periodic(s, hop, ex, j - 1))
         end;
-        ind2 -= d * N[$j]^$j;
-        for $(Symbol("$(s)$j")) = $(-m + 1):N[$j]
+        ind2 -= $Lprodj;
+        for $sj = $(-m + 1):N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
         end;
-        ind2 += d * N[$j]^$j)
+        ind2 += $Lprodj)
     elseif m > 0
-        expr = :(for $(Symbol("$(s)$j")) = 1:(N[$j]-$m)
+        expr = :(for $sj = 1:(N[$j]-$m)
             $(loop_periodic(s, hop, ex, j - 1))
         end;
-        ind2 -= d * N[$j]^$j;
-        for $(Symbol("$(s)$j")) = (N[$j]-$(m - 1)):N[$j]
+        ind2 -= $Lprodj;
+        for $sj = (N[$j]-$(m - 1)):N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
         end;
-        ind2 += d * N[$j]^$j)
+        ind2 += $Lprodj)
     else
-        expr = :(for $(Symbol("$(s)$j")) = 1:N[$j]
+        expr = :(for $sj = 1:N[$j]
             $(loop_periodic(s, hop, ex, j - 1))
         end)
     end
@@ -110,6 +119,7 @@ end
 # `ham_expr` is a function that combines the expressions for the diagonal and hopping terms to generate 
 # a block of expressions that applies the full Hamiltonian.
 function ham_expr(V, T, dim)
+    expr_Lprods = Expr(:block, [[:(Lprod1 = d * N[1])] ; [:($(Symbol("Lprod$i")) = $(Symbol("Lprod$(i-1)")) * N[$i]) for i = 2:dim]]...)
     expr_V = make_diag_expr(V)
     expr_diag = loop_periodic_diag(dim, length(V), expr_V)
     expr_hops = Vector{Expr}(undef, length(T))
@@ -119,7 +129,7 @@ function ham_expr(V, T, dim)
         expr_hops[idx] = loop_periodic(hops, expr_T)
         idx += 1
     end
-    return Expr(:block, expr_diag, expr_hops...)
+    return Expr(:block, expr_Lprods, expr_diag, expr_hops...)
 end
 
 # This structure is used to store information about the Hamiltonian of the system.
