@@ -2,11 +2,12 @@
 # for constructing and applying Hamiltonians on lattice systems.
 module LatticeHamiltonians
 
-using StaticArrays, LinearAlgebra
+using StaticArrays, LinearAlgebra, SparseArrays
+import SparseArrays: sparse
 import LinearAlgebra: mul!
-import Base: *
+import Base: *, size, length, eltype, adjoint 
 
-export LatticeHamiltonian, mul!, *
+export LatticeHamiltonian, mul!, *, sparse, size, length, eltype, adjoint
 export @lattice_hamiltonian
 
 # This function constructs the diagonal part of the Hamiltonian matrix
@@ -19,14 +20,17 @@ function make_diag_expr(Vs; s = :n)
         V = Vs[i]
         if typeof(V) <: ComplexF64
             expr_array[i] = (V != zero(ComplexF64)) ? :(ψout[ind1 + $i] = $V * ψin[ind1 + $i]) : :(ψout[ind1 + $i] = zero(ComplexF64))
+        elseif typeof(V) <: Symbol
+            expr_array[i] = :(ψout[ind1 + $i] = $V * ψin[ind1 + $i])
         elseif typeof(V) <: Function
             ss = [Symbol("$(s)$m") for m = 1:length(Vs)]
             expr_array[i] = :(ψout[ind1 + $i] = $V($(ss...)) * ψin[ind1 + $i])
-        elseif typeof(V) <: Expr
-            expr_array[i] = :(ψout[ind1 + $i] = $(V) * ψin[ind1 + $j])
+        elseif typeof(V) <: Expr 
+            expr_array[i] = :(ψout[ind1 + $i] = $(V) * ψin[ind1 + $i])
         end
     end
     expr_array[end] = :(ind1 += d)
+    println(expr_array)
     return Expr(:block, expr_array...)
 end
 
@@ -39,14 +43,14 @@ function make_hop_expr(is, js, Vs, dim; s = :n)
         j = js[idx]
         V = Vs[idx]
         if typeof(V) <: ComplexF64  
-            expr_array[idx] = (V!=zero(ComplexF64)) ? :(ψout[ind1 + $i] += $V * ψin[ind2 + $j]) : :(zero(ComplexF64))
+            expr_array[idx] = (V!=zero(ComplexF64)) ? :(ψout[ind1 + $j] += $V * ψin[ind2 + $i]) : :(zero(ComplexF64))
         elseif typeof(V) <: Symbol
-            expr_array[idx] = :(ψout[ind1 + $i] += $V * ψin[ind2 + $j])
+            expr_array[idx] = :(ψout[ind1 + $j] += $V * ψin[ind2 + $i])
         elseif typeof(V) <: Function
             ss = [Symbol("$(s)$m") for m = 1:dim]
-            expr_array[idx] = :(ψout[ind1 + $i] += $V($(ss...)) * ψin[ind2 + $j])
+            expr_array[idx] = :(ψout[ind1 + $j] += $V($(ss...)) * ψin[ind2 + $i])
         elseif typeof(V) <: Expr
-            expr_array[idx] = :(ψout[ind1 + $i] += $(V) * ψin[ind2 + $j])
+            expr_array[idx] = :(ψout[ind1 + $j] += $(V) * ψin[ind2 + $i])
         end 
     end
     expr_array[end] = :(ind1 += d; ind2 += d)
@@ -142,8 +146,82 @@ struct LatticeHamiltonian{real_dim, lattice_dim, F}
     d::Int
     L::MVector{lattice_dim, Int}
     params::Dict{Symbol, ComplexF64}
+    T::Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{Union{Expr, Symbol, ComplexF64}}}}
+    V::Vector{Union{Expr, Symbol, ComplexF64}}
     r::Vector{SVector{real_dim,Float64}}
     apply!::F
+end
+
+function size(H::LatticeHamiltonian)
+    l = H.d * prod(H.L)
+    return l, l
+end
+
+function length(H::LatticeHamiltonian)
+    return (H.d * prod(H.L))^2
+end
+
+function eltype(H::LatticeHamiltonian) #Hardcoded as ComplexF64 for the moment.
+    return ComplexF64
+end
+
+function adjoint(H::LatticeHamiltonian) #Hardcoding that the matrix is Hermitian!!
+    return H
+end
+
+function countnz(H::LatticeHamiltonian)
+    vol = prod(H.L)
+    nz = H.d 
+    for t = H.T
+        nz += length(t[2][1])
+    end
+    nz *= vol
+    return nz
+end
+
+function sitenumber(r, H::LatticeHamiltonian)
+    dim = length(H.L)
+    sitenum = r[dim]
+    for j = 1:(dim - 1)
+        sitenum = r[dim - j] + sitenum * H.L[dim-j]
+    end
+    return 1 + sitenum 
+end
+
+function sparse(H::LatticeHamiltonian)
+    nz = countnz(H)
+    ivals = Array{Int64}(undef, nz)
+    jvals = Array{Int64}(undef, nz)
+    hvals = Array{ComplexF64}(undef, nz)
+    ii = 1
+    R = CartesianIndices(Tuple(0:(H.L[j]-1) for j=eachindex(H.L)))
+    nhop = Vector{Int64}(undef, length(H.L))
+    for p = H.params
+        eval(:( $(p[1]) = $(p[2])))
+    end
+    for n = R
+        sitenum = sitenumber(n, H)
+        for σ = 1:H.d
+            r = H.d * (sitenum - 1) + σ
+            ivals[ii] = r
+            jvals[ii] = r
+            hvals[ii] = eval(H.V[σ])
+            ii+=1
+        end
+        for t = H.T
+            for i = eachindex(nhop)
+                nhop[i] = mod(n[i] + t[1][i], H.L[i])
+            end
+            sitenum_hop = sitenumber(nhop, H)
+            for σ = eachindex(t[2][1])
+                ivals[ii] = H.d * (sitenum_hop - 1) + t[2][1][σ]
+                jvals[ii] = H.d * (sitenum - 1) + t[2][2][σ]
+                hvals[ii] = eval(t[2][3][σ])
+                ii+=1
+            end
+        end
+    end
+    return dropzeros(sparse(ivals,jvals,hvals))
 end
 
 # `make_apply` function generates an `Expr` that defines a function to apply the Hamiltonian
@@ -217,8 +295,10 @@ macro lattice_hamiltonian(input)
         end
     end
 
-    V = eval(exprV.args[2])
-    d = length(V)
+    # T::Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{Union{Expr, Symbol, ComplexF64}}}}
+    # V::Vector{Union{Expr, Symbol, ComplexF64}}
+    # V = eval(exprV.args[2])
+    # d = length(V)
     L = eval(exprL.args[2])
     dim = length(L)
     if exprL.args[1] != :L
@@ -227,18 +307,23 @@ macro lattice_hamiltonian(input)
     if !(isa(L, Vector) && all(isinteger, L))
         error("Invalid input. Expected a vector of integers.")
     end
-    L = MVector{length(L)}(L)
-    if exprV.args[1] != :V
-        error("Invalid input. Format should be :V = [nums].")
+    if ~(typeof(exprV.args[2].args) <: Vector)
+        error("Invalid input. Expected a vector for V.")
     end
-    if !(isa(V, Vector) && all(x -> typeof(x) == ComplexF64, V))
-        error("Invalid input. Expected a vector of floats.")
-    end 
+    L = MVector{length(L)}(L)
     if isempty(hops)
         error("Invalid input. Expected at least one hopping expression.")
     end
     
-    
+    d = length(exprV.args[2].args)
+    V = Vector{Union{Expr, Symbol, ComplexF64}}(undef, d)
+    for i in eachindex(exprV.args[2].args)
+        try 
+            V[i] = ComplexF64(eval(exprV.args[2].args[i]))
+        catch e
+            V[i] = exprV.args[2].args[i]
+        end
+    end
     T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{Union{Expr,Symbol,ComplexF64}}}}()
     for i in eachindex(hops) 
         hop = hops[i] 
@@ -254,14 +339,13 @@ macro lattice_hamiltonian(input)
     B = SMatrix{dim, dim, Float64}(I * 2 * pi)
     r = [SVector{dim}(zeros(Float64, dim)) for i = 1:d]
     apply = eval(make_apply(params, V, T, dim))
-    H = LatticeHamiltonian(A, B, d, L, params, r, apply)
+    H = LatticeHamiltonian(A, B, d, L, params, T, V, r, apply)
     quote
         $H
     end
 end
 
 function fnzi(matrix)
-    rows = 0
     cols = 0
     i = Int[]
     j = Int[]
