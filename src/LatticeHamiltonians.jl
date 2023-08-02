@@ -297,12 +297,13 @@ function make_apply(params, V, T, dim)
     end
 end
 
-# BELOW IS DEPRACATED BUT NOT DELETED YET
+# BELOW IS DEPRECATED BUT NOT DELETED YET
 """
 Generate an `Expr` that defines a function to apply the Hamiltonian
 to an input wavefunction using the method defined by `make_apply`.
 """
 function make_multiply(H)
+    Base.depwarn("make_multiply is deprecated; please use mul! instead", :make_multiply)
     params_expr_array = Vector{Expr}(undef, length(H.params))
     idx = 1
     for (s, val) in H.params
