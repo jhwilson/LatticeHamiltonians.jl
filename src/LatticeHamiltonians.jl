@@ -39,7 +39,6 @@ function make_diag_expr(Vs; s = :n)
         end
     end
     expr_array[end] = :(ind1 += d)
-    println(expr_array)
     return Expr(:block, expr_array...)
 end
 
@@ -425,7 +424,7 @@ function fnzi(matrix)
             if elem != 0
                 push!(i, ri)
                 push!(j, ci)
-                if elem isa Number #7_6 added ifelse
+                if elem isa Number
                     push!(k, ComplexF64(elem))
                 else
                     push!(k, elem)
