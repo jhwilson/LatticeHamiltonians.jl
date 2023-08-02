@@ -1,0 +1,15 @@
+<!-- omit in toc -->
+# Contributing to LatticeHamiltonians.jl
+
+## Styleguides
+
+Try to follow the guidelines at [Julia Style Guide](https://docs.julialang.org/en/v1/manual/style-guide/index.html) when writing new code.
+
+Additionally, code should be formatted using [JuliaFormmater.jl](https://domluna.github.io/JuliaFormatter.jl/stable/).
+The easiest way to ensure this is to set up [LanguageServer.jl](https://domluna.github.io/JuliaFormatter.jl/stable/) for your editor of choice and enable formatting on save.
+
+In the future, the CI will check that all code is formatted correctly.
+
+### Project specific style
+
+**TBD**
