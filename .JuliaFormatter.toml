@@ -1,4 +1,4 @@
-indent = 2
+indent = 4
 remove_extra_newlines = true
 format_docstrings = true
 margins = 88
