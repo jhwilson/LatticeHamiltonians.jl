@@ -103,21 +103,21 @@ end
 Generate an `Expr` block for loops iterating over lattice sites
 in a periodic system.
 """
-loop_periodic(hops, ex; s = :n) = :(ind1 = 0;
-ind2 = d * $(site_expr(hops));
-$(loop_periodic(s, hops, ex, length(hops))))
+function loop_periodic(hops, ex; s = :n)
+  quote
+    ind1 = 0
+    ind2 = d * $(site_expr(hops))
+    $(loop_periodic(s, hops, ex, length(hops)))
+  end
+end
 
-loop_periodic_diag(dim, d, ex; s = :n) = :(ind1 = 0;
-$(loop_periodic(s, zeros(Int, dim), ex, dim)))
+function loop_periodic_diag(dim, d, ex; s = :n)
+  quote
+    ind1 = 0
+    $(loop_periodic(s, zeros(Int, dim), ex, dim))
+  end
+end
 
-# The variables Lprod1, Lprod2, ... are pre-computed as L[1], L[1]*L[2], ...
-# These are used to make the linear index after the index loops around
-# e.g., d = 1, ind = i1 + (i2 - 1) * L[1] + (i3 - 1) * L[1] * L[2] + ...
-# if i3 = L[3] and we increment
-# i3 -> i3 + 1 mod1 L[3], then when i3 = L[3]
-# ind = i1 + (i2 - 1) * L[1] + (L[3] - 1) * L[1] * L[2]
-# ind -> ind + L[1] * L[2] - L[1] * L[2] * L[3]
-# The subtraction of Lprod3 = L[1] * L[2] * L[3] is what gives periodic BCs
 function loop_periodic(s, hop, ex, j)
   if j == 0
     return ex
@@ -126,29 +126,33 @@ function loop_periodic(s, hop, ex, j)
   sj = Symbol("$(s)$j")
   Lprodj = Symbol("Lprod$j")
   if m < 0
-    expr = :(for $sj = 1:$(-m)
-      $(loop_periodic(s, hop, ex, j - 1))
-    end;
-    ind2 -= $Lprodj;
-    for $sj = $(-m + 1):N[$j]
-      $(loop_periodic(s, hop, ex, j - 1))
-    end;
-    ind2 += $Lprodj)
+    expr = quote
+      for $sj = 1:$(-m)
+        $(loop_periodic(s, hop, ex, j - 1))
+      end
+      ind2 -= $Lprodj
+      for $sj = $(-m + 1):N[$j]
+        $(loop_periodic(s, hop, ex, j - 1))
+      end
+      ind2 += $Lprodj
+    end
   elseif m > 0
-    expr = :(for $sj = 1:(N[$j]-$m)
-      $(loop_periodic(s, hop, ex, j - 1))
-    end;
-    ind2 -= $Lprodj;
-    for $sj = (N[$j]-$(m - 1)):N[$j]
-      $(loop_periodic(s, hop, ex, j - 1))
-    end;
-    ind2 += $Lprodj)
+    expr = quote
+      for $sj = 1:(N[$j]-$m)
+        $(loop_periodic(s, hop, ex, j - 1))
+      end
+      ind2 -= $Lprodj
+      for $sj = (N[$j]-$(m - 1)):N[$j]
+        $(loop_periodic(s, hop, ex, j - 1))
+      end
+      ind2 += $Lprodj
+    end
   else
-    expr = :(
+    expr = quote
       for $sj = 1:N[$j]
         $(loop_periodic(s, hop, ex, j - 1))
       end
-    )
+    end
   end
 end
 
