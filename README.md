@@ -21,6 +21,7 @@ In short, this module provides a flexible, efficient, and elegant toolset for co
 ## Package development
 
 We will partly be following [this guide](https://julialang.org/contribute/developing_package/).
+See [the contribution guide](.github/CONTRIBUTING.md) for more information.
 
 ## Documenting
 
@@ -40,12 +41,12 @@ Here's the commented code:
 using .LatticeHamiltonians
 
 # We use the @lattice_hamiltonian macro to build our model.
-LatticeHamiltonians.@lattice_hamiltonian begin 
+LatticeHamiltonians.@lattice_hamiltonian begin
     # V represents the on-site energies for each lattice site.
     # Here, it's set to 1.0 for all sites in our 1D lattice.
     # This can be thought of as the energy cost for an electron to exist at a site.
     V = ComplexF64[1.0]  # All sites have potential energy 1.0
-    
+
     # T represents the "hopping" terms, i.e., the probability of an electron "hopping" from one site to a neighboring site.
     # The key is the "hopping vector" - here [1] and [-1] signify right and left neighbors respectively.
     # The value is a tuple, where the first two entries are indices for the input and output states.
@@ -54,8 +55,8 @@ LatticeHamiltonians.@lattice_hamiltonian begin
         [1] => ([1], [1], [:(1.0 * t)]),  # Hopping to the right neighbor with strength t
         [-1] => ([1], [1], [:(1.0 * t)])  # Hopping to the left neighbor with strength t
     )
-    
-    # params is a dictionary where we can store any parameters our model depends on. 
+
+    # params is a dictionary where we can store any parameters our model depends on.
     # Here, we are storing 't', the strength of our hopping term.
     params = Dict{Symbol,ComplexF64}(:t => 1.0)  # Parameter for hopping strength
 
@@ -111,7 +112,7 @@ This is a more complicated Hamiltonian in two-dimensions
 using .LatticeHamiltonians
 
 # We use the @lattice_hamiltonian macro to build our model.
-LatticeHamiltonians.@lattice_hamiltonian begin 
+LatticeHamiltonians.@lattice_hamiltonian begin
     # V represents the on-site energies for each lattice site. Here we have two sites with energies 1 and -1.
     V = ComplexF64[1, -1.0]
 
