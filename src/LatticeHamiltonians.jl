@@ -418,6 +418,7 @@ macro lattice_hamiltonian(input)
         end
         T[args1] = (y, j, h)
     end
+    println(T)
 
     A = SMatrix{dim,dim,Float64}(I)
     B = SMatrix{dim,dim,Float64}(I * 2 * pi)
