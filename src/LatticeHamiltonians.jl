@@ -4,6 +4,7 @@ Functions and structures for constructing and applying Hamiltonians on lattice s
 module LatticeHamiltonians
 
 using StaticArrays, LinearAlgebra, SparseArrays
+using MacroTools
 import SparseArrays: sparse
 import LinearAlgebra: mul!
 import Base: *, size, length, eltype, adjoint
@@ -289,8 +290,8 @@ function make_apply(params, V, T, dim)
             ψin::AbstractArray,
             d::Int,
             dim::Int,
-            N,
-            $([:($k::$(typeof(v))) for (k, v) in params]...),
+            N::MVector{$dim,Int64},
+            params::Dict{Symbol,ComplexF64},
         )
             $(ham_expr(V, T, dim))
         end
@@ -322,11 +323,11 @@ function make_multiply(H)
 end
 
 function mul!(ψout::AbstractArray, H::LatticeHamiltonian, ψin::AbstractArray)
-    H.apply!(ψout, ψin, H.d, length(H.L), H.L, values(H.params)...)
+    H.apply!(ψout, ψin, H.d, length(H.L), H.L, H.params)
 end
 
 function *(H::LatticeHamiltonian, ψ::AbstractVector)
-    v = copy(ψ)
+    v = Array{eltype(ψ)}(undef, length(ψ))
     mul!(v, H, ψ)
     return v
 end
@@ -387,7 +388,14 @@ macro lattice_hamiltonian(input)
         try
             V[i] = ComplexF64(eval(exprV.args[2].args[i]))
         catch e
-            V[i] = exprV.args[2].args[i]
+            ex = exprV.args[2].args[i]
+            for key in keys(params)
+                ex = MacroTools.postwalk(
+                    x -> x == key ? :(params[$(QuoteNode(key))]) : x,
+                    ex,
+                )
+            end
+            V[i] = ex
         end
     end
     T = Dict{
@@ -400,8 +408,17 @@ macro lattice_hamiltonian(input)
         args1 = vec(eval(hop.args[1]) |> collect)
         m = hop.args[2].args[1]
         y, j, h = fnzi(m)
+        for jj in eachindex(h)
+            for key in keys(params)
+                h[jj] = MacroTools.postwalk(
+                    x -> x == key ? :(params[$(QuoteNode(key))]) : x,
+                    h[jj],
+                )
+            end
+        end
         T[args1] = (y, j, h)
     end
+    println(T)
 
     A = SMatrix{dim,dim,Float64}(I)
     B = SMatrix{dim,dim,Float64}(I * 2 * pi)
