@@ -20,23 +20,32 @@ in an efficient way by using metaprogramming features of Julia.
 It takes the on-site potentials `Vs` and generates a corresponding `Expr` block,
 which, when evaluated, would perform the operations of the diagonal part of the Hamiltonian.
 """
-function make_diag_expr(Vs; s = :n)
+function make_diag_expr(Vs; s = :n, sparse = false)
     expr_array = Vector{Expr}(undef, length(Vs) + 1)
     for i in eachindex(Vs)
         V = Vs[i]
-        if typeof(V) <: ComplexF64
-            expr_array[i] = if (V != zero(ComplexF64))
-                :(ψout[ind1+$i] = $V * ψin[ind1+$i])
-            else
-                :(ψout[ind1+$i] = zero(ComplexF64))
+        if sparse
+            expr_array[i] = quote
+                ivals[idx] = ind1 + $i
+                jvals[idx] = ind1 + $i
+                hvals[idx] = $V
+                idx += 1
             end
-        elseif typeof(V) <: Symbol
-            expr_array[i] = :(ψout[ind1+$i] = $V * ψin[ind1+$i])
-        elseif typeof(V) <: Function
-            ss = [Symbol("$(s)$m") for m = 1:length(Vs)]
-            expr_array[i] = :(ψout[ind1+$i] = $V($(ss...)) * ψin[ind1+$i])
-        elseif typeof(V) <: Expr
-            expr_array[i] = :(ψout[ind1+$i] = $(V) * ψin[ind1+$i])
+        else
+            if typeof(V) <: ComplexF64
+                expr_array[i] = if (V != zero(ComplexF64))
+                    :(ψout[ind1+$i] = $V * ψin[ind1+$i])
+                else
+                    :(ψout[ind1+$i] = zero(ComplexF64))
+                end
+            elseif typeof(V) <: Symbol
+                expr_array[i] = :(ψout[ind1+$i] = $V * ψin[ind1+$i])
+            elseif typeof(V) <: Function
+                ss = [Symbol("$(s)$m") for m = 1:length(Vs)]
+                expr_array[i] = :(ψout[ind1+$i] = $V($(ss...)) * ψin[ind1+$i])
+            elseif typeof(V) <: Expr
+                expr_array[i] = :(ψout[ind1+$i] = $(V) * ψin[ind1+$i])
+            end
         end
     end
     expr_array[end] = :(ind1 += d)
@@ -49,25 +58,34 @@ end
 Constructs the off-diagonal part of the Hamiltonian matrix
 by generating an `Expr` block, which performs the operations of the off-diagonal part of the Hamiltonian.
 """
-function make_hop_expr(is, js, Vs, dim; s = :n)
+function make_hop_expr(is, js, Vs, dim; s = :n, sparse = false)
     expr_array = Vector{Expr}(undef, length(is) + 1)
     for idx in eachindex(is)
         i = is[idx]
         j = js[idx]
         V = Vs[idx]
-        if typeof(V) <: ComplexF64
-            expr_array[idx] = if (V != zero(ComplexF64))
-                :(ψout[ind1+$j] += $V * ψin[ind2+$i])
-            else
-                :(zero(ComplexF64))
+        if sparse
+            expr_array[idx] = quote
+                ivals[idx] = ind2 + $i
+                jvals[idx] = ind1 + $j
+                hvals[idx] = $V
+                idx += 1
             end
-        elseif typeof(V) <: Symbol
-            expr_array[idx] = :(ψout[ind1+$j] += $V * ψin[ind2+$i])
-        elseif typeof(V) <: Function
-            ss = [Symbol("$(s)$m") for m = 1:dim]
-            expr_array[idx] = :(ψout[ind1+$j] += $V($(ss...)) * ψin[ind2+$i])
-        elseif typeof(V) <: Expr
-            expr_array[idx] = :(ψout[ind1+$j] += $(V) * ψin[ind2+$i])
+        else
+            if typeof(V) <: ComplexF64
+                expr_array[idx] = if (V != zero(ComplexF64))
+                    :(ψout[ind1+$j] += $V * ψin[ind2+$i])
+                else
+                    :(zero(ComplexF64))
+                end
+            elseif typeof(V) <: Symbol
+                expr_array[idx] = :(ψout[ind1+$j] += $V * ψin[ind2+$i])
+            elseif typeof(V) <: Function
+                ss = [Symbol("$(s)$m") for m = 1:dim]
+                expr_array[idx] = :(ψout[ind1+$j] += $V($(ss...)) * ψin[ind2+$i])
+            elseif typeof(V) <: Expr
+                expr_array[idx] = :(ψout[ind1+$j] += $(V) * ψin[ind2+$i])
+            end
         end
     end
     expr_array[end] = :(ind1 += d; ind2 += d)
@@ -162,7 +180,7 @@ end
 Combine the expressions for the diagonal and hopping terms to generate
 a block of expressions that applies the full Hamiltonian.
 """
-function ham_expr(V, T, dim)
+function ham_expr(V, T, dim; sparse = false)
     expr_Lprods = Expr(
         :block,
         [
@@ -170,12 +188,12 @@ function ham_expr(V, T, dim)
             [:($(Symbol("Lprod$i")) = $(Symbol("Lprod$(i-1)")) * N[$i]) for i = 2:dim]
         ]...,
     )
-    expr_V = make_diag_expr(V)
+    expr_V = make_diag_expr(V; sparse = sparse)
     expr_diag = loop_periodic_diag(dim, length(V), expr_V)
     expr_hops = Vector{Expr}(undef, length(T))
     idx = 1
     for (hops, (is, js, hs)) in T
-        expr_T = make_hop_expr(is, js, hs, dim)
+        expr_T = make_hop_expr(is, js, hs, dim; sparse = sparse)
         expr_hops[idx] = loop_periodic(hops, expr_T)
         idx += 1
     end
@@ -239,42 +257,6 @@ function sitenumber(r, H::LatticeHamiltonian)
     return 1 + sitenum
 end
 
-function sparse(H::LatticeHamiltonian)
-    nz = countnz(H)
-    ivals = Array{Int64}(undef, nz)
-    jvals = Array{Int64}(undef, nz)
-    hvals = Array{ComplexF64}(undef, nz)
-    ii = 1
-    R = CartesianIndices(Tuple(0:(H.L[j]-1) for j in eachindex(H.L)))
-    nhop = Vector{Int64}(undef, length(H.L))
-    for p in H.params
-        eval(:($(p[1]) = $(p[2])))
-    end
-    for n in R
-        sitenum = sitenumber(n, H)
-        for σ = 1:H.d
-            r = H.d * (sitenum - 1) + σ
-            ivals[ii] = r
-            jvals[ii] = r
-            hvals[ii] = eval(H.V[σ])
-            ii += 1
-        end
-        for t in H.T
-            for i in eachindex(nhop)
-                nhop[i] = mod(n[i] + t[1][i], H.L[i])
-            end
-            sitenum_hop = sitenumber(nhop, H)
-            for σ in eachindex(t[2][1])
-                ivals[ii] = H.d * (sitenum_hop - 1) + t[2][1][σ]
-                jvals[ii] = H.d * (sitenum - 1) + t[2][2][σ]
-                hvals[ii] = eval(t[2][3][σ])
-                ii += 1
-            end
-        end
-    end
-    return dropzeros(sparse(ivals, jvals, hvals))
-end
-
 """
     make_apply(params, V, T, dim)
 
@@ -298,29 +280,6 @@ function make_apply(params, V, T, dim)
     end
 end
 
-# BELOW IS DEPRECATED BUT NOT DELETED YET
-"""
-Generate an `Expr` that defines a function to apply the Hamiltonian
-to an input wavefunction using the method defined by `make_apply`.
-"""
-function make_multiply(H)
-    Base.depwarn("make_multiply is deprecated; please use mul! instead", :make_multiply)
-    params_expr_array = Vector{Expr}(undef, length(H.params))
-    idx = 1
-    for (s, val) in H.params
-        params_expr_array[idx] = :($(Symbol(s))::$(typeof(val)) = H.params[$(QuoteNode(s))])
-        idx += 1
-    end
-    return quote
-        function mult!(ψout::AbstractArray, H::$(typeof(H)), ψin::AbstractArray)
-            d::Int = H.d
-            dim::Int = length(H.L)
-            N = H.L
-            $(Expr(:block, params_expr_array...))
-            H.apply!(ψout, ψin, d, dim, N, $(keys(H.params)...))
-        end
-    end
-end
 
 function mul!(ψout::AbstractArray, H::LatticeHamiltonian, ψin::AbstractArray)
     H.apply!(ψout, ψin, H.d, length(H.L), H.L, H.params)
@@ -362,10 +321,6 @@ macro lattice_hamiltonian(input)
         end
     end
 
-    # T::Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{Union{Expr, Symbol, ComplexF64}}}}
-    # V::Vector{Union{Expr, Symbol, ComplexF64}}
-    # V = eval(exprV.args[2])
-    # d = length(V)
     L = eval(exprL.args[2])
     dim = length(L)
     if exprL.args[1] != :L
@@ -425,6 +380,27 @@ macro lattice_hamiltonian(input)
     r = [SVector{dim}(zeros(Float64, dim)) for i = 1:d]
     apply = eval(make_apply(params, V, T, dim))
     H = LatticeHamiltonian(A, B, d, L, params, T, V, r, apply)
+
+    eval(
+        quote
+            function sparse(H::$(typeof(H)))
+                nz = countnz(H)
+                ivals = Array{Int64}(undef, nz)
+                jvals = Array{Int64}(undef, nz)
+                hvals = Array{ComplexF64}(undef, nz)
+                idx = 1
+                params = H.params
+                d = H.d
+                N = H.L
+                dim = length(N)
+                $(ham_expr(V, T, dim; sparse = true))
+                idx -= 1
+                return dropzeros!(
+                    sparse(ivals[1:idx], jvals[1:idx], hvals[1:idx], size(H)...),
+                )
+            end
+        end,
+    )
     quote
         $H
     end
