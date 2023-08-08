@@ -26,11 +26,6 @@ struct LatticeHamiltonian{real_dim,lattice_dim,F}
     d::Int
     L::MVector{lattice_dim,Int}
     params::Dict{Symbol,ComplexF64}
-    T::Dict{
-        Vector{Int64},
-        Tuple{Vector{Int64},Vector{Int64},Vector{Union{Expr,Symbol,ComplexF64}}},
-    }
-    V::Vector{Union{Expr,Symbol,ComplexF64}}
     r::Vector{SVector{real_dim,Float64}}
     apply!::F
 end
@@ -169,7 +164,7 @@ macro lattice_hamiltonian(input)
     B = SMatrix{dim,dim,Float64}(I * 2 * pi)
     r = [SVector{dim}(zeros(Float64, dim)) for i = 1:d]
     apply = eval(make_apply(params, V, T, dim))
-    H = LatticeHamiltonian(A, B, d, L, params, T, V, r, apply)
+    H = LatticeHamiltonian(A, B, d, L, params, r, apply)
 
     build_sparse(H, V, T)
     
