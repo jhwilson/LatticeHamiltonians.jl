@@ -1,6 +1,7 @@
 using LatticeHamiltonians
 using Test
+using LinearAlgebra
 
 @testset "LatticeHamiltonians.jl" begin
-    # Write your tests here.
+    include("comparison.jl")
 end
