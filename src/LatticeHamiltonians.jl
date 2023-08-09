@@ -12,6 +12,8 @@ import Base: *, size, length, eltype, adjoint
 export LatticeHamiltonian, mul!, *, sparse, size, length, eltype, adjoint
 export @lattice_hamiltonian
 
+LiteralOrSymbolic = Union{Symbol,Expr,ComplexF64}
+
 include("build_lattice_operator.jl")
 
 """
@@ -65,7 +67,6 @@ function sitenumber(r, H::LatticeHamiltonian)
     return 1 + sitenum
 end
 
-
 function mul!(ψout::AbstractArray, H::LatticeHamiltonian, ψin::AbstractArray)
     H.apply!(ψout, ψin, H.d, length(H.L), H.L, H.params)
 end
@@ -75,8 +76,6 @@ function *(H::LatticeHamiltonian, ψ::AbstractVector)
     mul!(v, H, ψ)
     return v
 end
-
-# `lattice_hamiltonian` is a macro that provides a Convenient interface for defining a Hamiltonian.
 
 """
 Define a Hamiltonian using a convenient mini domain specific language (described below).
@@ -123,7 +122,7 @@ macro lattice_hamiltonian(input)
     end
 
     d = length(exprV.args[2].args)
-    V = Vector{Union{Expr,Symbol,ComplexF64}}(undef, d)
+    V = Vector{LiteralOrSymbolic}(undef, d)
     for i in eachindex(exprV.args[2].args)
         try
             V[i] = ComplexF64(eval(exprV.args[2].args[i]))
@@ -196,27 +195,32 @@ function build_sparse(H::LatticeHamiltonian, V, T)
     )
 end
 
-function fnzi(matrix)
-    cols = 0
-    i = Int[]
-    j = Int[]
-    k = Vector{Union{ComplexF64,Symbol,Expr}}(undef, 0)
+"""
+    nonzero_elements(matrix)
+
+Takes an expression describing a matrix and returns a named tuple of vectors (rows, cols, vals)
+where each vector respectively contains the row, column, and value of a nonzero element in the matrix.
+All numbers are converted to `ComplexF64` numbers.
+"""
+function nonzero_elements(matrix::Expr)
+    rows = Int[]
+    cols = Int[]
+    vals = LiteralOrSymbolic[]
 
     for (ri, row) in enumerate(matrix.args)
-        cols = max(cols, length(row.args))
         for (ci, elem) in enumerate(row.args)
-            if elem != 0
-                push!(i, ri)
-                push!(j, ci)
+            if !(elem isa Number && iszero(elem))
+                push!(rows, ri)
+                push!(cols, ci)
                 if elem isa Number
-                    push!(k, ComplexF64(elem))
+                    push!(vals, ComplexF64(elem))
                 else
-                    push!(k, elem)
+                    push!(vals, elem)
                 end
             end
         end
     end
-    return i, j, k
+    return (rows = rows, cols = cols, vals = vals)
 end
 
 end
