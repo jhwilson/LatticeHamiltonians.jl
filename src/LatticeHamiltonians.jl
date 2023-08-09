@@ -137,35 +137,41 @@ macro lattice_hamiltonian(input)
             V[i] = ex
         end
     end
-    T = Dict{
-        Vector{Int64},
-        Tuple{Vector{Int64},Vector{Int64},Vector{Union{Expr,Symbol,ComplexF64}}},
-    }()
-    for i in eachindex(hops)
-        hop = hops[i]
+    T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}()
+    for hop in hops
         Base.remove_linenums!(hop)
-        args1 = vec(eval(hop.args[1]) |> collect)
+
+        # extract non-zero elements from the hopping matrix
         m = hop.args[2].args[1]
-        y, j, h = fnzi(m)
-        for jj in eachindex(h)
-            for key in keys(params)
-                h[jj] = MacroTools.postwalk(
-                    x -> x == key ? :(params[$(QuoteNode(key))]) : x,
-                    h[jj],
-                )
-            end
-        end
-        T[args1] = (y, j, h)
+        rows, cols, values = nonzero_elements(m)
+
+        # replace parameter symbols in the hoppings with their values
+        map!(
+            function (value)
+                for key in keys(params)
+                    value = MacroTools.postwalk(
+                        x -> x == key ? :(params[$(QuoteNode(key))]) : x,
+                        value,
+                    )
+                end
+                value
+            end,
+            values,
+            values,
+        )
+
+        args1 = vec(eval(hop.args[1]) |> collect)
+        T[args1] = (rows, cols, values)
     end
 
     A = SMatrix{dim,dim,Float64}(I)
     B = SMatrix{dim,dim,Float64}(I * 2 * pi)
-    r = [SVector{dim}(zeros(Float64, dim)) for i = 1:d]
+    r = fill(SVector{dim}(zeros(Float64, dim)), d)
     apply = eval(make_apply(params, V, T, dim))
     H = LatticeHamiltonian(A, B, d, L, params, r, apply)
 
     build_sparse(H, V, T)
-    
+
     quote
         $H
     end
