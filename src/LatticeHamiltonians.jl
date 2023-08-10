@@ -70,13 +70,15 @@ function adjoint(H::LatticeHamiltonian) #Hardcoding that the matrix is Hermitian
     return H
 end
 
-function countnz(vol, d, T)
-    nz = d
-    for t in T
-        nz += length(t[2][1])
-    end
-    nz *= vol
-    return nz
+"""
+    bound_nonzero(vol, d, T)
+
+Provide an upper bound on the number of non-zero elements in the Hamiltonian matrix,
+based on the provided hoppings `T`, the number of orbitals `d`, and the volume of the system `vol`.
+"""
+function bound_nonzero(vol, d::Int, T)
+    non_zero = d + sum(t -> length(t[2][1]), T)
+    return non_zero * vol
 end
 
 function sitenumber(r, H::LatticeHamiltonian)
@@ -200,7 +202,7 @@ macro lattice_hamiltonian(input)
 end
 
 function build_sparse(H::LatticeHamiltonian, V, T)
-    nz = countnz(prod(H.L), H.d, T)
+    nz = bound_nonzero(prod(H.L), H.d, T)
     dim = length(H.L)
     eval(
         quote
