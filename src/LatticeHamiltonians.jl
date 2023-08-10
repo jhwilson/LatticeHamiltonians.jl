@@ -12,26 +12,47 @@ import Base: *, size, length, eltype, adjoint
 export LatticeHamiltonian, mul!, *, sparse, size, length, eltype, adjoint
 export @lattice_hamiltonian
 
+"""
+    LiteralOrSymbolic
+
+Possible types of parameters for the potential and hopping functions.
+"""
 LiteralOrSymbolic = Union{Symbol,Expr,ComplexF64}
 
 include("build_lattice_operator.jl")
 
 """
-This structure is used to store information about the Hamiltonian of the system.
-It includes information about the real-space basis (A, B), number of orbitals (d), system size (L),
-parameters for potential and hopping functions (params), real space coordinates of orbitals within a unit cell (r),
-and a function that applies the Hamiltonian to an input wavefunction (apply!).
+    LatticeHamiltonian{real_dim,lattice_dim,F}
+
+Stores information about the Hamiltonian of the system, so that matrix-vector multiplication
+can be performed efficiently.
+
+This object should not be initialized by the user.
+Instead, for construction of the Hamiltonian, see the `@lattice_hamiltonian` macro.
+
+# Fields
+
+  - `A::SMatrix{real_dim,lattice_dim,Float64}`: Real-space basis
+  - `B::SMatrix{real_dim,lattice_dim,Float64}`: Real-space basis
+  - `d::Int`: Number of orbitals per site
+  - `L::MVector{lattice_dim,Int}`: System size
+  - `params::Dict{Symbol,ComplexF64}`: Parameters for potential and hopping functions
+  - `r::Vector{SVector{real_dim,Float64}}`: Real-space coordinates of orbitals within a unit cell
+  - `apply!::F`: Function that applies the Hamiltonian to an input wavefunction
 """
 struct LatticeHamiltonian{real_dim,lattice_dim,F}
+    # are these A and B sublattices for a bipartite lattice?
     A::SMatrix{real_dim,lattice_dim,Float64}
     B::SMatrix{real_dim,lattice_dim,Float64}
     d::Int
+    # why is this mutable?
     L::MVector{lattice_dim,Int}
     params::Dict{Symbol,ComplexF64}
     r::Vector{SVector{real_dim,Float64}}
     apply!::F
 end
 
+# should we go ahead and implement AbstractMatrix?
 function size(H::LatticeHamiltonian)
     l = H.d * prod(H.L)
     return l, l
@@ -41,7 +62,7 @@ function length(H::LatticeHamiltonian)
     return (H.d * prod(H.L))^2
 end
 
-function eltype(H::LatticeHamiltonian) #Hardcoded as ComplexF64 for the moment.
+function eltype(::LatticeHamiltonian) #Hardcoded as ComplexF64 for the moment.
     return ComplexF64
 end
 
