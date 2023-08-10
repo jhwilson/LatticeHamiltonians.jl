@@ -90,10 +90,21 @@ function sitenumber(r, H::LatticeHamiltonian)
     return 1 + sitenum
 end
 
-function mul!(ψout::AbstractArray, H::LatticeHamiltonian, ψin::AbstractArray)
+"""
+    mul!(ψout::AbstractVector, H::LatticeHamiltonian, ψin::AbstractVector)
+
+Efficiently perform the matrix multiplaction `H*ψin`, writing the result to `ψout`.
+"""
+function mul!(ψout::AbstractVector, H::LatticeHamiltonian, ψin::AbstractVector)
     H.apply!(ψout, ψin, H.d, length(H.L), H.L, H.params)
 end
 
+"""
+    *(H::LatticeHamiltonian, ψ::AbstractVector)
+
+Overloaded matrix multiplication operator for `LatticeHamiltonian`s
+using the `mul!` function.
+"""
 function *(H::LatticeHamiltonian, ψ::AbstractVector)
     v = Array{eltype(ψ)}(undef, length(ψ))
     mul!(v, H, ψ)
