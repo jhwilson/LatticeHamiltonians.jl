@@ -180,19 +180,11 @@ macro lattice_hamiltonian(input)
         rows, cols, values = nonzero_elements(m)
 
         # replace parameter symbols in the hoppings with their values
-        map!(
-            function (value)
-                for key in keys(params)
-                    value = MacroTools.postwalk(
-                        x -> x == key ? :(params[$(QuoteNode(key))]) : x,
-                        value,
-                    )
-                end
-                value
-            end,
-            values,
-            values,
-        )
+        values .=
+            MacroTools.postwalk.(
+                x -> haskey(params, x) ? :(params[$(QuoteNode(x))]) : x,
+                values,
+            )
 
         args1 = vec(eval(hop.args[1]) |> collect)
         T[args1] = (rows, cols, values)
