@@ -88,13 +88,13 @@ site_expr(hops) = site_expr(hops, 1)
 
 function site_expr(hops, j)
     if j == length(hops)
-        t = hops[j] ≥ 0 ? :($(hops[j])) : :(N[$j] - $(-hops[j]))
+        t = hops[j] ≥ 0 ? :($(hops[j])) : :(L[$j] - $(-hops[j]))
         return t
     end
     t = if hops[j] ≥ 0
-        :($(hops[j]) + $(site_expr(hops, j + 1)) * N[$j])
+        :($(hops[j]) + $(site_expr(hops, j + 1)) * L[$j])
     else
-        :(N[$j] * (1 + $(site_expr(hops, j + 1))) - $(-hops[j]))
+        :(L[$j] * (1 + $(site_expr(hops, j + 1))) - $(-hops[j]))
     end
     return t
 end
@@ -135,25 +135,25 @@ function loop_periodic(s, hop, ex, j)
                 $(loop_periodic(s, hop, ex, j - 1))
             end
             ind2 -= $Lprodj
-            for $sj = $(-m + 1):N[$j]
+            for $sj = $(-m + 1):L[$j]
                 $(loop_periodic(s, hop, ex, j - 1))
             end
             ind2 += $Lprodj
         end
     elseif m > 0
         expr = quote
-            for $sj = 1:(N[$j]-$m)
+            for $sj = 1:(L[$j]-$m)
                 $(loop_periodic(s, hop, ex, j - 1))
             end
             ind2 -= $Lprodj
-            for $sj = (N[$j]-$(m - 1)):N[$j]
+            for $sj = (L[$j]-$(m - 1)):L[$j]
                 $(loop_periodic(s, hop, ex, j - 1))
             end
             ind2 += $Lprodj
         end
     else
         expr = quote
-            for $sj = 1:N[$j]
+            for $sj = 1:L[$j]
                 $(loop_periodic(s, hop, ex, j - 1))
             end
         end
@@ -170,8 +170,8 @@ function ham_expr(V, T, dim; sparse = false)
     expr_Lprods = Expr(
         :block,
         [
-            [:(Lprod1 = d * N[1])]
-            [:($(Symbol("Lprod$i")) = $(Symbol("Lprod$(i-1)")) * N[$i]) for i = 2:dim]
+            [:(Lprod1 = d * L[1])]
+            [:($(Symbol("Lprod$i")) = $(Symbol("Lprod$(i-1)")) * L[$i]) for i = 2:dim]
         ]...,
     )
     expr_V = make_diag_expr(V; sparse = sparse)
@@ -201,11 +201,10 @@ function make_apply(params, V, T, dim)
             ψin::AbstractArray,
             d::Int,
             dim::Int,
-            N::MVector{$dim,Int64},
+            L::SVector{$dim,Int64},
             params::Dict{Symbol,ComplexF64},
         )
             $(ham_expr(V, T, dim))
         end
     end
 end
-

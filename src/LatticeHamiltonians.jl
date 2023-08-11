@@ -35,7 +35,7 @@ Instead, for construction of the Hamiltonian, see the `@lattice_hamiltonian` mac
   - `A::SMatrix{real_dim,lattice_dim,Float64}`: Real-space basis
   - `B::SMatrix{real_dim,lattice_dim,Float64}`: Real-space basis
   - `d::Int`: Number of orbitals per site
-  - `L::MVector{lattice_dim,Int}`: System size
+  - `L::SVector{lattice_dim,Int}`: System size
   - `params::Dict{Symbol,ComplexF64}`: Parameters for potential and hopping functions
   - `r::Vector{SVector{real_dim,Float64}}`: Real-space coordinates of orbitals within a unit cell
   - `apply!::F`: Function that applies the Hamiltonian to an input wavefunction
@@ -45,8 +45,7 @@ struct LatticeHamiltonian{real_dim,lattice_dim,F}
     A::SMatrix{real_dim,lattice_dim,Float64}
     B::SMatrix{real_dim,lattice_dim,Float64}
     d::Int
-    # why is this mutable?
-    L::MVector{lattice_dim,Int}
+    L::SVector{lattice_dim,Int}
     params::Dict{Symbol,ComplexF64}
     r::Vector{SVector{real_dim,Float64}}
     apply!::F
@@ -189,7 +188,7 @@ macro lattice_hamiltonian(input)
         error("Invalid input. Expected a vector for V.")
     end
 
-    L = MVector{length(L)}(L)
+    L = SVector{length(L)}(L)
     if isempty(hops)
         error("Invalid input. Expected at least one hopping expression.")
     end
@@ -241,8 +240,8 @@ function build_sparse(H::LatticeHamiltonian, V, T)
                 idx = 1
                 params = H.params
                 d = H.d
-                N = H.L
-                dim = length(N)
+                L = H.L
+                dim = length(L)
                 $(ham_expr(V, T, dim; sparse = true))
                 idx -= 1
                 return dropzeros!(
