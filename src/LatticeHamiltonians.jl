@@ -156,54 +156,51 @@ macro lattice_hamiltonian(input)
     params = Dict{Symbol,ComplexF64}() #Initialize dictionary
 
     for ex in input.args # loops over exprL/O/hops/params
-        try
-            if ex.args[1] == :L
-                exprL = ex
-            elseif ex.args[1] == :V
-                exprV = ex
-            elseif ex.head == :(->)
-                push!(hops, ex)  # Add hopping expression to the vector
-            elseif ex.head == :(=)
-                param_key = ex.args[1]
-                param_val = eval(ex.args[2])
-                params[param_key] = param_val #adds it to the dictionary
-            end
-        catch e
+        # skip any expressions that don't have an args list
+        # as they're irrelevant to our DSL
+        if !hasproperty(ex, :args)
+            continue
         end
+        if ex.args[1] == :L
+            exprL = ex
+        elseif ex.args[1] == :V
+            exprV = ex
+        elseif ex.head == :(->)
+            push!(hops, ex)  # Add hopping expression to the vector
+        elseif ex.head == :(=)
+            param_key = ex.args[1]
+            param_val = eval(ex.args[2])
+            params[param_key] = param_val #adds it to the dictionary
+        end
+    end
+
+    if exprL.args[1] != :L
+        error("Invalid input. Format should be :L = [nums].")
     end
 
     L = eval(exprL.args[2])
     dim = length(L)
-    if exprL.args[1] != :L
-        error("Invalid input. Format should be :L = [nums].")
-    end
+
     if !(isa(L, Vector) && all(isinteger, L))
         error("Invalid input. Expected a vector of integers.")
     end
+
     if !(typeof(exprV.args[2].args) <: Vector)
         error("Invalid input. Expected a vector for V.")
     end
+
     L = MVector{length(L)}(L)
     if isempty(hops)
         error("Invalid input. Expected at least one hopping expression.")
     end
 
+    # set the on site dimensionality from the length of the V vector
+    # which specifies on-site potentials
     d = length(exprV.args[2].args)
-    V = Vector{LiteralOrSymbolic}(undef, d)
-    for i in eachindex(exprV.args[2].args)
-        try
-            V[i] = ComplexF64(eval(exprV.args[2].args[i]))
-        catch e
-            ex = exprV.args[2].args[i]
-            for key in keys(params)
-                ex = MacroTools.postwalk(
-                    x -> x == key ? :(params[$(QuoteNode(key))]) : x,
-                    ex,
-                )
-            end
-            V[i] = ex
-        end
-    end
+
+    # Why don't we just lookup the symbols always?
+    V = ComplexF64[eval_or_lookup(arg, params) for arg in exprV.args[2].args]
+
     T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}()
     for hop in hops
         Base.remove_linenums!(hop)
@@ -213,11 +210,7 @@ macro lattice_hamiltonian(input)
         rows, cols, values = nonzero_elements(m)
 
         # replace parameter symbols in the hoppings with their values
-        values .=
-            MacroTools.postwalk.(
-                x -> haskey(params, x) ? :(params[$(QuoteNode(x))]) : x,
-                values,
-            )
+        values .= replace_parameters(values, params)
 
         args1 = vec(eval(hop.args[1]) |> collect)
         T[args1] = (rows, cols, values)
@@ -259,6 +252,33 @@ function build_sparse(H::LatticeHamiltonian, V, T)
             end
         end,
     )
+end
+
+"""
+    eval_or_lookup(expr, params::Dict{Symbol,ComplexF64})
+
+Attempt to evaluate `expr` as a literal expression.
+If this fails due to undefined symbols, attempt to look them up from `params`.
+"""
+function eval_or_lookup(expr, params::Dict{Symbol,ComplexF64})::ComplexF64
+    try
+        ComplexF64(eval(expr))
+    catch e
+        if isa(e, UndefVarError)
+            replace_parameters(expr, params)
+        else
+            rethrow(e)
+        end
+    end
+end
+
+"""
+    replace_parameters(expr, params::Dict{Symbol,ComplexF64})
+
+Searches `expr` for symbols that are keys in `params` and replaces them with the corresponding value.
+"""
+function replace_parameters(expr, params::Dict{Symbol,ComplexF64})
+    MacroTools.postwalk.(x -> haskey(params, x) ? :(params[$(QuoteNode(x))]) : x, expr)
 end
 
 """
