@@ -35,7 +35,7 @@ Instead, for construction of the Hamiltonian, see the `@lattice_hamiltonian` mac
   - `A::SMatrix{real_dim,lattice_dim,Float64}`: Real-space basis
   - `B::SMatrix{real_dim,lattice_dim,Float64}`: Real-space basis
   - `d::Int`: Number of orbitals per site
-  - `L::SVector{lattice_dim,Int}`: System size
+  - `L::MVector{lattice_dim,Int}`: System size
   - `params::Dict{Symbol,ComplexF64}`: Parameters for potential and hopping functions
   - `r::Vector{SVector{real_dim,Float64}}`: Real-space coordinates of orbitals within a unit cell
   - `apply!::F`: Function that applies the Hamiltonian to an input wavefunction
@@ -45,7 +45,7 @@ struct LatticeHamiltonian{real_dim,lattice_dim,F}
     A::SMatrix{real_dim,lattice_dim,Float64}
     B::SMatrix{real_dim,lattice_dim,Float64}
     d::Int
-    L::SVector{lattice_dim,Int}
+    L::MVector{lattice_dim,Int}
     params::Dict{Symbol,ComplexF64}
     r::Vector{SVector{real_dim,Float64}}
     apply!::F
@@ -188,7 +188,7 @@ macro lattice_hamiltonian(input)
         error("Invalid input. Expected a vector for V.")
     end
 
-    L = SVector{length(L)}(L)
+    L = MVector{length(L)}(L)
     if isempty(hops)
         error("Invalid input. Expected at least one hopping expression.")
     end
