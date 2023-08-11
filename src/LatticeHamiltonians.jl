@@ -128,7 +128,7 @@ It expects the following types of expressions, supplied in any order.
     And each entry is the the number of unit cells in that direction.
   - **REQUIRED** `V = [V1, V2, ...]`: A vector of numbers of length `d`, that define the on-site potential
     for each orbital within a unit cell.
-  - Expressions of the orm `(δ1, δ2, ...) -> T`, with `δi` integers and `T` a \(d\times d\) matrix:
+  - Expressions of the orm `(δ1, δ2, ...) -> T`, with `δi` integers and `T` a \\(d\\times d\\) matrix:
     The hopping matrix for to hop by `(δ1, δ2, ...)` unit cells.
 
 # Examples
