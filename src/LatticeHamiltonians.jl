@@ -197,8 +197,7 @@ macro lattice_hamiltonian(input)
     # which specifies on-site potentials
     d = length(exprV.args[2].args)
 
-    # Why don't we just lookup the symbols always?
-    V = LiteralOrSymbolic[eval_or_to_lookup(arg, params) for arg in exprV.args[2].args]
+    V = LiteralOrSymbolic[symbols_to_lookups(arg, params) for arg in exprV.args[2].args]
 
     T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}()
     for hop in hops
@@ -255,31 +254,24 @@ function build_sparse(H::LatticeHamiltonian, V, T)
 end
 
 """
-    eval_or_to_lookup(expr, params::Dict{Symbol,ComplexF64})
-
-Attempt to evaluate `expr` as a literal expression.
-If this fails due to undefined symbols, then replace the symbols with lookups in `params`.
-"""
-function eval_or_to_lookup(expr, params::Dict{Symbol,ComplexF64})::ComplexF64
-    try
-        ComplexF64(eval(expr))
-    catch e
-        if isa(e, UndefVarError)
-            symbols_to_lookups(expr, params)
-        else
-            rethrow(e)
-        end
-    end
-end
-
-"""
     symbols_to_lookups(expr, params::Dict{Symbol,ComplexF64})
 
-Searches `expr` for symbols that are keys in `params` and replaces lookups,
-i.e. `t1` becomes `params[:t1]`.
+Attempts to convert terms to a canonical form:
+
+  - All literal numbers are converted to `ComplexF64`
+  - All symbols that are keys in `params` are converted to lookups, i.e. `t1` becomes `params[:t1]`.
+  - Everything else is left as is.
 """
 function symbols_to_lookups(expr, params::Dict{Symbol,ComplexF64})
-    MacroTools.postwalk.(x -> haskey(params, x) ? :(params[$(QuoteNode(x))]) : x, expr)
+    MacroTools.postwalk.(function (x)
+        if isexpr(x, Number)
+            ComplexF64(x)
+        elseif haskey(params, x)
+            :(params[$(QuoteNode(x))])
+        else
+            x
+        end
+    end, expr)
 end
 
 """
