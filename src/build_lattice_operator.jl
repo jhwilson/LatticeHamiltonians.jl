@@ -201,7 +201,7 @@ function make_apply(params, V, T, dim)
             ψin::AbstractArray,
             d::Int,
             dim::Int,
-            L::SVector{$dim,Int64},
+            L::MVector{$dim,Int64},
             params::Dict{Symbol,ComplexF64},
         )
             $(ham_expr(V, T, dim))
