@@ -198,7 +198,7 @@ macro lattice_hamiltonian(input)
     d = length(exprV.args[2].args)
 
     # Why don't we just lookup the symbols always?
-    V = ComplexF64[eval_or_lookup(arg, params) for arg in exprV.args[2].args]
+    V = LiteralOrSymbolic[eval_or_to_lookup(arg, params) for arg in exprV.args[2].args]
 
     T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}()
     for hop in hops
@@ -208,8 +208,9 @@ macro lattice_hamiltonian(input)
         m = hop.args[2].args[1]
         rows, cols, values = nonzero_elements(m)
 
-        # replace parameter symbols in the hoppings with their values
-        values .= replace_parameters(values, params)
+        # replace parameter symbols in the hoppings with
+        # with lookups in the the parameter dictionary
+        values .= symbols_to_lookups(values, params)
 
         args1 = vec(eval(hop.args[1]) |> collect)
         T[args1] = (rows, cols, values)
@@ -253,17 +254,17 @@ function build_sparse(H::LatticeHamiltonian, V, T)
 end
 
 """
-    eval_or_lookup(expr, params::Dict{Symbol,ComplexF64})
+    eval_or_to_lookup(expr, params::Dict{Symbol,ComplexF64})
 
 Attempt to evaluate `expr` as a literal expression.
-If this fails due to undefined symbols, attempt to look them up from `params`.
+If this fails due to undefined symbols, then replace the symbols with lookups in `params`.
 """
-function eval_or_lookup(expr, params::Dict{Symbol,ComplexF64})::ComplexF64
+function eval_or_to_lookup(expr, params::Dict{Symbol,ComplexF64})::ComplexF64
     try
         ComplexF64(eval(expr))
     catch e
         if isa(e, UndefVarError)
-            replace_parameters(expr, params)
+            symbols_to_lookups(expr, params)
         else
             rethrow(e)
         end
@@ -271,11 +272,12 @@ function eval_or_lookup(expr, params::Dict{Symbol,ComplexF64})::ComplexF64
 end
 
 """
-    replace_parameters(expr, params::Dict{Symbol,ComplexF64})
+    symbols_to_lookups(expr, params::Dict{Symbol,ComplexF64})
 
-Searches `expr` for symbols that are keys in `params` and replaces them with the corresponding value.
+Searches `expr` for symbols that are keys in `params` and replaces lookups,
+i.e. `t1` becomes `params[:t1]`.
 """
-function replace_parameters(expr, params::Dict{Symbol,ComplexF64})
+function symbols_to_lookups(expr, params::Dict{Symbol,ComplexF64})
     MacroTools.postwalk.(x -> haskey(params, x) ? :(params[$(QuoteNode(x))]) : x, expr)
 end
 
