@@ -1,3 +1,35 @@
+function compare_over_wavefunctions(H, Hmat)
+    @testset "Random wavefunctions" begin
+        for _ = 1:100
+            ψ = randn(ComplexF64, 20)
+            @test iszero(H * ψ - Hmat * ψ)
+        end
+    end
+    @testset "Plane waves" begin
+        for n = 1:20
+            ψ = plane_wave(n, 20)
+            @test iszero(H * ψ - Hmat * ψ)
+        end
+    end
+    @testset "Gaussian Localized" begin
+        for _ = 1:100
+            σ = 2 * rand()
+            for n = 1:20
+                ψ = gaussian(n, 20, σ)
+                @test iszero(H * ψ - Hmat * ψ)
+            end
+        end
+    end
+    @testset "Exp Localized" begin
+        for _ = 1:100
+            ξ = 2 * rand()
+            for n = 1:20
+                ψ = exponential(n, 20, ξ)
+                @test iszero(H * ψ - Hmat * ψ)
+            end
+        end
+    end
+end
 
 @testset "Polyacetylene" begin
     H = @lattice_hamiltonian begin
@@ -18,9 +50,11 @@
     Hmat[20, 1] = 2
 
     @testset "Compare with manually written Hamiltonian" begin
-        for i = 1:100
-            ψ = randn(ComplexF64, 20)
-            @assert iszero((H * ψ) - (Hmat * ψ))
-        end
+        compare_over_wavefunctions(H, Hmat)
+    end
+
+    @testset "Right inverse" begin
+        Hinv = inv(Hmat)
+        @test hcat([H * Hinv[i, :] for i = 1:20]...) ≈ Matrix(I, 20, 20)
     end
 end
