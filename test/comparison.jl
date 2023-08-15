@@ -6,8 +6,8 @@ function compare_over_wavefunctions(H, Hmat)
         end
     end
     @testset "Plane waves" begin
-        for n = 1:20
-            ψ = plane_wave(n, 20)
+        for n = 1:10
+            ψ = plane_wave([n], [10], 2)
             @test iszero(H * ψ - Hmat * ψ)
         end
     end
@@ -31,6 +31,17 @@ function compare_over_wavefunctions(H, Hmat)
     end
 end
 
+function system_test_suite(H, Hmat)
+    @testset "Compare with manually written Hamiltonian" begin
+        compare_over_wavefunctions(H, Hmat)
+    end
+
+    @testset "Right inverse" begin
+        Hinv = inv(Hmat)
+        @test hcat([H * Hinv[i, :] for i = 1:20]...) ≈ Matrix(I, 20, 20)
+    end
+end
+
 @testset "Polyacetylene" begin
     H = @lattice_hamiltonian begin
         L = [10]
@@ -49,12 +60,5 @@ end
     Hmat[1, 20] = 2
     Hmat[20, 1] = 2
 
-    @testset "Compare with manually written Hamiltonian" begin
-        compare_over_wavefunctions(H, Hmat)
-    end
-
-    @testset "Right inverse" begin
-        Hinv = inv(Hmat)
-        @test hcat([H * Hinv[i, :] for i = 1:20]...) ≈ Matrix(I, 20, 20)
-    end
+    system_test_suite(H, Hmat)
 end
