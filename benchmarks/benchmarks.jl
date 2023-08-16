@@ -36,3 +36,9 @@ Eigs["Lattice Hamiltonians"] = @benchmarkable eigs($(H))
 Eigs["Sparse"] = @benchmarkable eigs($(Hsparse))
 
 SUITE["eigs"] = Eigs
+
+tune!(SUITE)
+
+results = run(SUITE; verbose = true)
+
+println(results)
