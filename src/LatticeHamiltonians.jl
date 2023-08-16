@@ -32,8 +32,8 @@ Instead, for construction of the Hamiltonian, see the `@lattice_hamiltonian` mac
 
 # Fields
 
-  - `A::SMatrix{real_dim,lattice_dim,Float64}`: Real-space basis
-  - `B::SMatrix{real_dim,lattice_dim,Float64}`: Real-space basis
+  - `A::SMatrix{real_dim,lattice_dim,Float64}`: Matrix whose columns are the primitive lattice vectors
+  - `B::SMatrix{real_dim,lattice_dim,Float64}`: Matrix whose columns are the reciprocal lattice vectors
   - `d::Int`: Number of orbitals per site
   - `L::MVector{lattice_dim,Int}`: System size
   - `params::Dict{Symbol,ComplexF64}`: Parameters for potential and hopping functions
@@ -41,7 +41,6 @@ Instead, for construction of the Hamiltonian, see the `@lattice_hamiltonian` mac
   - `apply!::F`: Function that applies the Hamiltonian to an input wavefunction
 """
 struct LatticeHamiltonian{real_dim,lattice_dim,F}
-    # are these A and B sublattices for a bipartite lattice?
     A::SMatrix{real_dim,lattice_dim,Float64}
     B::SMatrix{real_dim,lattice_dim,Float64}
     d::Int
@@ -197,7 +196,9 @@ macro lattice_hamiltonian(input)
     # which specifies on-site potentials
     d = length(Vector(exprV.args[2].args))
 
-    V = LiteralOrSymbolic[symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)]
+    V = LiteralOrSymbolic[
+        symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)
+    ]
 
     T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}()
     for hop in hops
