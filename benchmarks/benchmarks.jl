@@ -3,9 +3,6 @@ using BenchmarkTools
 using LinearAlgebra
 using Arpack
 
-# Define the Hamiltonian to benchmark
-BENCHMARK_SIZE = 200
-
 H = @lattice_hamiltonian begin
     L = [100]
     V = [0.0, 0.0]
@@ -15,6 +12,9 @@ H = @lattice_hamiltonian begin
     t1 = 1.0
     t2 = 2.0
 end
+
+# Define the Hamiltonian to benchmark
+BENCHMARK_SIZE = H.d * H.L[1]
 
 Hsparse = sparse(H)
 
