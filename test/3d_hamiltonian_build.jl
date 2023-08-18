@@ -1,4 +1,4 @@
-@test "3D build test" begin
+@testset "3D build test" begin
     H = @lattice_hamiltonian begin
         L = [10, 10, 10]
         V = [0, 0]
@@ -17,4 +17,5 @@
     Hsp = sparse(H)
     ψ = randn(ComplexF64, size(H)[1])
     H*ψ
+    @test Hsp*ψ ≈ H*ψ atol=1e-10
 end
