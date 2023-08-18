@@ -211,7 +211,7 @@ macro lattice_hamiltonian(input)
         # with lookups in the the parameter dictionary
         values = LiteralOrSymbolic[symbols_to_lookups(v, params) for v in values]
 
-        if typeof(hop.args[1]) <: Integer
+        if hop.args[1] isa Integer
             args1 = [hop.args[1]]
         else
             args1 = Vector{Int}(hop.args[1].args)
