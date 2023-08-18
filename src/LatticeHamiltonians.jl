@@ -211,8 +211,11 @@ macro lattice_hamiltonian(input)
         # with lookups in the the parameter dictionary
         values = LiteralOrSymbolic[symbols_to_lookups(v, params) for v in values]
 
-        # args1 = vec(eval(hop.args[1]) |> collect)
-        args1 = Vector(hop.args[1].args)
+        if typeof(hop.args[1]) <: Integer
+            args1 = [hop.args[1]]
+        else
+            args1 = Vector{Int}(hop.args[1].args)
+        end
         T[args1] = (rows, cols, values)
     end
 
