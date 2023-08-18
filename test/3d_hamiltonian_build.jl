@@ -17,5 +17,5 @@
     Hsp = sparse(H)
     ψ = randn(ComplexF64, size(H)[1])
     H*ψ
-    @test isapprox(maximum(abs.(Hsp * ψ - H * ψ)), 0, atol = 1e-10)
+    @test Hsp*ψ ≈ H*ψ atol=1e-10
 end
