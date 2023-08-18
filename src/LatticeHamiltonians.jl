@@ -177,7 +177,7 @@ macro lattice_hamiltonian(input)
         error("Invalid input. Format should be :L = [nums].")
     end
 
-    L = eval(exprL.args[2])
+    L = Vector(exprL.args[2].args)
     dim = length(L)
 
     if !(isa(L, Vector) && all(isinteger, L))
@@ -188,16 +188,16 @@ macro lattice_hamiltonian(input)
         error("Invalid input. Expected a vector for V.")
     end
 
-    L = MVector{length(L)}(L)
+    L = MVector{length(L),Int}(L)
     if isempty(hops)
         error("Invalid input. Expected at least one hopping expression.")
     end
 
     # set the on site dimensionality from the length of the V vector
     # which specifies on-site potentials
-    d = length(exprV.args[2].args)
+    d = length(Vector(exprV.args[2].args))
 
-    V = LiteralOrSymbolic[symbols_to_lookups(arg, params) for arg in exprV.args[2].args]
+    V = LiteralOrSymbolic[symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)]
 
     T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}()
     for hop in hops
@@ -209,9 +209,10 @@ macro lattice_hamiltonian(input)
 
         # replace parameter symbols in the hoppings with
         # with lookups in the the parameter dictionary
-        values .= symbols_to_lookups(values, params)
+        values = LiteralOrSymbolic[symbols_to_lookups(v, params) for v in values]
 
-        args1 = vec(eval(hop.args[1]) |> collect)
+        # args1 = vec(eval(hop.args[1]) |> collect)
+        args1 = Vector(hop.args[1].args)
         T[args1] = (rows, cols, values)
     end
 
@@ -262,7 +263,7 @@ Attempts to convert terms to a canonical form:
   - Everything else is left as is.
 """
 function symbols_to_lookups(expr, params::Dict{Symbol,ComplexF64})
-    MacroTools.postwalk.(function (x)
+    MacroTools.postwalk(function (x)
         if isexpr(x, Number)
             ComplexF64(x)
         elseif haskey(params, x)
