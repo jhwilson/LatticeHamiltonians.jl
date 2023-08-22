@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Lattice Hamiltonians Tutorial · LatticeHamiltonians.jl</title><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.045/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.24/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">LatticeHamiltonians.jl</a></span></div><form class="docs-search" action="../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../">LatticeHamiltonians.jl</a></li><li><a class="tocitem" href="../api/">API Documentation</a></li><li class="is-active"><a class="tocitem" href>Lattice Hamiltonians Tutorial</a><ul class="internal"><li><a class="tocitem" href="#D-Nearest-neighbor"><span>1D Nearest neighbor</span></a></li><li><a class="tocitem" href="#D-Nearest-neighbor-with-multiple-orbitals"><span>2D Nearest neighbor with multiple orbitals</span></a></li><li><a class="tocitem" href="#Worked-Example:-Graphene"><span>Worked Example: Graphene</span></a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Lattice Hamiltonians Tutorial</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Lattice Hamiltonians Tutorial</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/jhwilson/LatticeHamiltonians.jl/blob/main/docs/src/tutorial.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><ul><li><a href="#Lattice-Hamiltonians-Tutorial">Lattice Hamiltonians Tutorial</a></li><li class="no-marker"><ul><li><a href="#D-Nearest-neighbor">1D Nearest neighbor</a></li><li><a href="#D-Nearest-neighbor-with-multiple-orbitals">2D Nearest neighbor with multiple orbitals</a></li><li><a href="#Worked-Example:-Graphene">Worked Example: Graphene</a></li></ul></li></ul><h1 id="Lattice-Hamiltonians-Tutorial"><a class="docs-heading-anchor" href="#Lattice-Hamiltonians-Tutorial">Lattice Hamiltonians Tutorial</a><a id="Lattice-Hamiltonians-Tutorial-1"></a><a class="docs-heading-anchor-permalink" href="#Lattice-Hamiltonians-Tutorial" title="Permalink"></a></h1><p>The main entry point for users of the <code>LatticeHamiltonians</code> package is the <code>@lattice_hamiltonian</code> macro.</p><p>We will work through a few examples of how to use this macro to build Hamiltonians and hen how to use the resulting Hamiltonians to do calculations.</p><h2 id="D-Nearest-neighbor"><a class="docs-heading-anchor" href="#D-Nearest-neighbor">1D Nearest neighbor</a><a id="D-Nearest-neighbor-1"></a><a class="docs-heading-anchor-permalink" href="#D-Nearest-neighbor" title="Permalink"></a></h2><h3 id="Creating-a-Hamiltonian"><a class="docs-heading-anchor" href="#Creating-a-Hamiltonian">Creating a Hamiltonian</a><a id="Creating-a-Hamiltonian-1"></a><a class="docs-heading-anchor-permalink" href="#Creating-a-Hamiltonian" title="Permalink"></a></h3><p>As a first example, we will create a Hamiltonian for a 1-dimensional lattice with nearest-neighbor hopping, periodic boundary conditions, and 100 lattice sites.</p><p class="math-container">\[H = \sum_{\langle ij\rangle} t c_i^\dagger c_j + \sum_i V c^\dagger_ic_i\]</p><p>The complete code for construction the Hamiltonian is:</p><pre><code class="language-julia hljs">using LatticeHamiltonians
+
+H = @lattice_hamiltonian begin
+    # V represents the on-site energies for each lattice site.
+    # Here, it&#39;s set to 1.0 for all sites in our 1D lattice.
+    # This can be thought of as the energy cost for an electron to exist at a site.
+    V = [1.0]  # All sites have potential energy 1.0
+
+    # the &quot;hopping&quot; terms, i.e., the probability of an electron &quot;hopping&quot; from one site to a neighboring site.
+    (1) -&gt; t # Hopping to the right neighbor with strength t
+    (-1) -&gt; t # Hopping to the left neighbor with strength t
+  # t is an adjustable parameter, for which we specify a default value below
+    t = 1.0
+
+    # L is a list of the number of sites in each dimension.
+    # Here, it&#39;s [100], meaning we have a 1D lattice (a line) with 100 sites.
+    L = [100]  # 1D lattice with 100 sites
+end</code></pre><p>Some explanation of the domain specific language (DSL) used here is in order.</p><ol><li><p><code>V = ComplexF64[1.0]  # All sites have potential energy 1.0</code></p><ul><li>We can set an on site potential value for each orbital at a given site. Since this module has only one orbital <code>V</code> has only a single element.</li></ul></li><li><p><code>(1) -&gt; t # Hopping to the right neighbor with strength t</code></p><ul><li>Hoppings are specified by the number of lattice sites in each dimension. So for a one-dimensional lattice we have a hopping to the right <code>1</code> and to the left <code>-1</code>.</li></ul></li><li><p><code>t = 1.0</code></p></li></ol><ul><li>We can set the initial value of arbitrary parameters to be used in the hoppings or on site potential.</li></ul><ol><li><p><code>L = [100]  # 1D lattice with 100 sites</code></p><ul><li><code>L</code> specifies the number of sites in each dimension of the lattice. Here, we have a 1D lattice with 100 sites.</li></ul></li></ol><h3 id="Acting-on-states"><a class="docs-heading-anchor" href="#Acting-on-states">Acting on states</a><a id="Acting-on-states-1"></a><a class="docs-heading-anchor-permalink" href="#Acting-on-states" title="Permalink"></a></h3><p>The Hamiltonian <code>H</code> can be applied to a state vector which is represented <code>Vector{ComplexF64}</code> using matrix-vector multiplication <code>H * ψ</code>.</p><h3 id="Calculating-eigenvalues-and-eigenvectors"><a class="docs-heading-anchor" href="#Calculating-eigenvalues-and-eigenvectors">Calculating eigenvalues and eigenvectors</a><a id="Calculating-eigenvalues-and-eigenvectors-1"></a><a class="docs-heading-anchor-permalink" href="#Calculating-eigenvalues-and-eigenvectors" title="Permalink"></a></h3><p>Eigenvalues and eigenvectors may be computed directly using <code>Arpack.jl</code>. For example,</p><pre><code class="language-julia hljs">using Arpack: eigs
+λ = eigs(H)</code></pre><h2 id="D-Nearest-neighbor-with-multiple-orbitals"><a class="docs-heading-anchor" href="#D-Nearest-neighbor-with-multiple-orbitals">2D Nearest neighbor with multiple orbitals</a><a id="D-Nearest-neighbor-with-multiple-orbitals-1"></a><a class="docs-heading-anchor-permalink" href="#D-Nearest-neighbor-with-multiple-orbitals" title="Permalink"></a></h2><p>Consider now a model on 2D lattice, with two orbital per site. We will still only consider periodic boundary conditions and nearest-neighbor hopping.</p><p>The second-quantized Hamiltonian is</p><p class="math-container">\[  H = \sum_{\langle ij\rangle} \sum_{\alpha\beta} t_{\alpha\beta} c_{i\alpha}^\dagger c_{j\beta} + \sum_i \sum_\alpha V_\alpha c^\dagger_{i\alpha}c_{i\alpha}\]</p><p>and the corresponding code is</p><pre><code class="language-julia hljs">H = @lattice_hamiltonian begin
+  V = [-1.0, 1.0]  # orbitals have different potentials
+  # Hopping in the x direction with strength tx
+  # only occurs between different orbitals
+  (1, 0) -&gt; [0 tx
+             tx 0]
+  (-1, 0) -&gt; [0 tx
+             tx 0]
+  # Hopping in the y direction with strength ty
+  # only occurs for the same orbital
+  (0, 1) -&gt; [ty 0
+             0 ty]
+  (0, -1) -&gt; [ty 0
+             0 ty]
+  # Hopping between orbitals on the same site
+  (0, 0) -&gt; [0 t0
+             t0 0]
+
+  L = [10, 10]  # 2D lattice with 10x10 sites
+  tx = 1.0
+  ty = 1.2
+  t0 = 0.5
+end</code></pre><h3 id="Acting-on-states-2"><a class="docs-heading-anchor" href="#Acting-on-states-2">Acting on states</a><a class="docs-heading-anchor-permalink" href="#Acting-on-states-2" title="Permalink"></a></h3><p>Even though our lattice is no longer one dimensional the state vector is still represented as a one dimensional vector of complex numbers. In general, the Hilbert space of a lattice model is represented as tensor product of the orbital quantum number and quantum numbers associated with each lattice vector</p><p class="math-container">\[\ket{\psi} = \ket{o} \otimes \ket{n_1} \otimes \ket{n_2} \cdots\]</p><p>Internally this tensor product is realized as <a href="https://en.wikipedia.org/wiki/Kronecker_product">Kronecker product</a> of vectors</p><p class="math-container">\[\vec{\psi} = \vec{o} \otimes \vec{x}_1 \otimes \vec{x}_2 \cdots\]</p><p>Note that while the tensor product is commutative, the Kronecker product is not. As a consequence the state vector is ordered by the site indices and then the orbital indices, with the orbital indices changing fastest. For example, for a 1D lattice with 2 orbitals per site, the state vector is ordered as <code>[ψ₁₁, ψ₁₂, ψ₂₁, ψ₂₂, ψ₃₁, ψ₃₂, ...]</code>. Conveniently, this is the same ordering obtained if one reshapes an <code>N</code> dimensional Julia array into a vector using <code>vec</code>, so one can define a state vector as a Julia array and then reshape it into a vector</p><pre><code class="language-julia hljs">ψN[o, i₁, i₂, i₃, ...] = ...
+ψ = vec(ψN)
+H * ψ</code></pre><h2 id="Worked-Example:-Graphene"><a class="docs-heading-anchor" href="#Worked-Example:-Graphene">Worked Example: Graphene</a><a id="Worked-Example:-Graphene-1"></a><a class="docs-heading-anchor-permalink" href="#Worked-Example:-Graphene" title="Permalink"></a></h2><p>We now use what we have learned to examine the tight-binding structure of graphene. The typical tight-binding model for graphene is a 2D lattice with two orbitals per site, one for each of the two carbon atoms in the unit cell</p><p class="math-container">\[H = \sum_{\langle i j \rangle} t \left(a^\dagger_i b_j + b^\dagger_i a_j\right)+ \sum_i \Delta \left(a^\dagger_i a_i - b^\dagger_i b_i\right)\]</p><p>where <span>$a_i$</span> and <span>$b_i$</span> are the annihilation operators for the <span>$A$</span> and <span>$B$</span> sublattices at site <span>$i$</span>. Here we have allowed for a sublattice splitting <span>$\Delta$</span>.</p><p>We can easily construct the lattice Hamiltonian</p><pre><code class="language-julia hljs">H = @lattice_hamiltonian begin
+  L = [10, 20] # 2D lattice with 10x20 sites
+  V = [Δ, -Δ]
+  (0, 0) -&gt; [0 t ; t 0]
+  (1, 0) -&gt; [0 0 ; t 0]
+  (0, 1) -&gt; [0 0 ; t 0]
+  (-1, 0) -&gt; [0 t ; 0 0]
+  (0, -1) -&gt; [0 t ; 0 0]
+  t = 1.0
+  Δ = 0.0
+end</code></pre><p>The form of the Hamiltonian is best eunderstood by considering the lattice structure of graphene. The graphene lattice is hexagonal, which can be described as a triangular lattice with two atoms per unit cell, labeled as <span>$A$</span> and <span>$B$</span>. <img src="../assets/graphene.svg" alt="Hexagonal lattice with lattice vectors"/> In the typical nearest-neighbor model of graphene, the hopping term is nonzero only between atoms in different sublattices. Looking at the figure above, we see that this means hopping can happen either way within a lattice site, but only from <span>$A$</span> to <span>$B$</span> when moving one direction along the lattice vectors and vice versa for the other direction.</p><p>Of course, we can solve this model analytically in the usual way: Fourier transforming to momentum space and diagonalizing the resulting matrix. Let us define the two component object <span>$\Psi_i = (a_i, b_i)^T$</span> in terms of which</p><p class="math-container">\[H = t\sum_{ij}  \Psi^\dagger_i\left(
+\left[\delta_{i_1, j_1}\delta_{i_2, j_2}
++ \delta_{i_1, j_1 + 1}\delta_{i_2, j_2}
++ \delta_{i_1, j_1}\delta_{i_2, j_2 + 1}\right]\hat{\tau}_-
++ h.c.
+\right)\Psi_j+ \sum_i \Delta \Psi^\dagger_i \hat{\tau}_3\Psi_i\]</p><p>Defining the discrete Fourier transform <span>$\Psi_i =\frac{1}{\sqrt{L_1L_2}}\sum_{n} \Psi_n \exp\left(\frac{2\pi i n_1 i_1}{L_1} + \frac{2\pi i n_2 i_2}{L_2}\right)$</span></p><p class="math-container">\[H = t\sum_{n}  \Psi^\dagger_n\left(
+\left[1
++ e^{-2\pi i\frac{n_1}{L_1}}
++ e^{-2\pi i\frac{n_2}{L_2}}
+\right]\hat{\tau}_-
++ h.c.
+\right)\Psi_n+ \sum_n \Delta \Psi^\dagger_n \hat{\tau}_3\Psi_n\]</p><p>For simplicity let us consider the <span>$Δ=0$</span> case. The Schroedinger equation reduces to</p><p class="math-container">\[t|1 + e^{i\frac{2\pi n_1}{L_1}} + e^{i\frac{2\pi n_2}{L_2}}|\begin{pmatrix}
+0&amp; e^{i\phi_{n_1n_2}}\\
+e^{-i\phi_{n_1 n_2}}&amp; 0
+\end{pmatrix}\mathbf{u}_{n_1n_2}
+= E_{n_1n_2}\mathbf{u}_{n_1n_2}\]</p><p>with <span>$\phi_{n_1n_2} = \arg(1 + e^{i\frac{2\pi n_1}{L_1}} + e^{i\frac{2\pi n_2}{L_2}})$</span>.</p><p>This an be straightforwardly diagonalized by</p><p class="math-container">\[\mathbf{u}_{n_1 n_2} = \frac{1}{\sqrt{2}}\begin{pmatrix}
+1\\
+\pm e^{-i \phi_{n_1n_2}}
+\end{pmatrix}\]</p><p>with eigenvalues</p><p class="math-container">\[E_{n_1 n_2; \pm} = \pm t\sqrt{3 + 2 \cos\frac{2\pi n_1}{L_1} + 2\cos\frac{2\pi n_2}{L_2} + 2 \cos\left(\frac{2\pi n_1}{L_1} - \frac{2\pi n_2}{L_2}\right)}.\]</p><p>We can see how to verify these solutions with the <code>LatticeHamiltonians</code> package. We can define a state</p><pre><code class="language-julia hljs">function ψn(n1, n2, L1, L2, ζ)
+  k1 = 2π*n1/L1
+  k2 = 2π*n2/L2
+  ψ = Array{ComplexF64, 3}(undef, 2, L1, L2)
+
+  x = 1.0 + cis(-k1) + cis(-k2)
+  phase = x / abs(x)
+  u = [1.0, ζ*phase]/sqrt(2.)
+
+  for j = 1:L2
+    for i = 1:L1
+      ψ[:, i, j] = cis(k1*(i-1) + k2*(j-1))*u
+    end
+  end
+  vec(ψ)/sqrt(L1*L2)
+end
+
+function Enζ(n1, n2, L1, L2, ζ)
+  k1 = 2π*n1/L1
+  k2 = 2π*n2/L2
+  ζ*abs(1 + cis(k1) + cis(k2))
+end
+
+@testset &quot;Graphene eigenvalues&quot; begin
+  @testset for n1=0:(H.L[1]-1), n2=0:(H.L[2]-1), ζ=[1.0, -1.0]
+    ψ = ψn(n1, n2, H.L[1], H.L[2], ζ)
+    @test isapprox(H*ψ,  H.params[:t]*Enζ(n1, n2, H.L[1], H.L[2], ζ)*ψ)
+  end
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Test Summary:        | Pass  Total  Time
+Graphene eigenvalues |  400    400  1.1s</code></pre><h3 id="Real-space-representation"><a class="docs-heading-anchor" href="#Real-space-representation">Real space representation</a><a id="Real-space-representation-1"></a><a class="docs-heading-anchor-permalink" href="#Real-space-representation" title="Permalink"></a></h3><p>The above wavefunctions make no reference to the real space structure of the lattice. They care only about the connectivity of the lattice, and could equally well be used for e.g. a square lattice. To make contact with the actual hexagonal structure of graphene, we need to additionally include the form of the lattice vectors.</p><div class="admonition is-warning"><header class="admonition-header">Not yet implemented</header><div class="admonition-body"><p>The real space representation of the Hamiltonian is not yet implemented.</p></div></div><p>For the orientation of the lattice considered above we have</p><p class="math-container">\[\mathbf{a}_1 = a \frac{1}{2}(\hat{x} + \sqrt{3}\hat{y})\\
+\mathbf{a}_2 = a \frac{1}{2}(-\hat{x} + \sqrt{3}\hat{y})\]</p><p>So unit-cell <span>$i$</span> is at position <span>$\mathbf{R}_i = i_1 \mathbf{a}_1 + i_2 \mathbf{a}_2 \equiv \hat{A}\mathbf{i}$</span>, where <span>$\hat{A}$</span> is the matrix with the lattice vectors as its columns. <span>$LatticeHamiltonians$</span> provides this matrix as the <span>$A$</span> field of the Hamiltonian. Additionally, the sublattice sites have their own offset within the unit cell, which is given by the <span>$r$</span> field of the Hamiltonian: in general, the offset of orbital <span>$l$</span> in unit cell is given by <span>$H.r[l]$</span>.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../api/">« API Documentation</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.25 on <span class="colophon-date" title="Tuesday 22 August 2023 23:13">Tuesday 22 August 2023</span>. Using Julia version 1.9.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
