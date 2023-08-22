@@ -1,4 +1,4 @@
-using LatticeHamiltonians: nonzero_elements
+using LatticeHamiltonians: nonzero_elements, symbols_to_lookups
 
 @testset "Expression manipulation" begin
     @testset "nonzero_elements" begin
@@ -21,5 +21,14 @@ using LatticeHamiltonians: nonzero_elements
         # Test literal expressions or literal complex numbers
         @test nonzero_elements(:([4im, 0, 1 + 2im, 2 * 3])) ==
               (rows = [1, 2, 2], cols = [1, 1, 2], vals = [4im, 1 + 2im, 6]) broken = true
+    end
+
+    @testset "symbols_to_lookup" begin
+        @test symbols_to_lookups(:(1 + 2), Dict{Symbol,ComplexF64}(:x => 1, :y => 2)) ==
+              :(1 + 2)
+        @test symbols_to_lookups(:(x + y), Dict{Symbol,ComplexF64}(:x => 1, :y => 2)) ==
+              :(params[:x] + params[:y])
+        @test symbols_to_lookups(:(1 + x + z), Dict{Symbol,ComplexF64}(:x => 1, :y => 2)) ==
+              :(1 + params[:x] + z)
     end
 end
