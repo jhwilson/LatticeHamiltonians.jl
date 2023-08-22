@@ -150,7 +150,7 @@ with 10 unit cells.
 macro lattice_hamiltonian(input)
     exprL = :()
     exprV = :()
-    hops = Vector()  # Store all hopping expressions in a vector
+    hops = Vector{Expr}()  # Store all hopping expressions in a vector
     params = Dict{Symbol,ComplexF64}() #Initialize dictionary
 
     for ex in input.args # loops over exprL/O/hops/params
@@ -196,10 +196,36 @@ macro lattice_hamiltonian(input)
     # which specifies on-site potentials
     d = length(Vector(exprV.args[2].args))
 
-    V = LiteralOrSymbolic[
-        symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)
-    ]
+    # Hamiltonian matrix elements
+    T, V = extract_matrix_elements(hops, exprV, params)
 
+    # Real space structure
+    A = SMatrix{dim,dim,Float64}(I) #TODO
+    B = SMatrix{dim,dim,Float64}(I * 2 * pi) #TODO
+    r = fill(SVector{dim}(zeros(Float64, dim)), d) #TODO
+
+    apply = eval(make_apply(params, V, T, dim))
+    H = LatticeHamiltonian(A, B, d, L, params, r, apply)
+
+    build_sparse(H, V, T)
+
+    quote
+        $H
+    end
+end
+
+"""
+    extract_matrix_elements(hops, exprV, params)
+
+Given a vector of hopping expressions, an expression for the on-site potential, and a dictionary of parameters,
+returns a tuple of the form `(T, V)` where `T` is an array of tuples `(rows, cols, values)` that
+describe the non-zero elements of the hopping matrix, and `V` is a vector of the on-site potentials.
+"""
+function extract_matrix_elements(
+    hops::Vector{Expr},
+    exprV::Expr,
+    params::Dict{Symbol,ComplexF64},
+)
     T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}()
     for hop in hops
         Base.remove_linenums!(hop)
@@ -220,17 +246,11 @@ macro lattice_hamiltonian(input)
         T[args1] = (rows, cols, values)
     end
 
-    A = SMatrix{dim,dim,Float64}(I)
-    B = SMatrix{dim,dim,Float64}(I * 2 * pi)
-    r = fill(SVector{dim}(zeros(Float64, dim)), d)
-    apply = eval(make_apply(params, V, T, dim))
-    H = LatticeHamiltonian(A, B, d, L, params, r, apply)
+    V = LiteralOrSymbolic[
+        symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)
+    ]
 
-    build_sparse(H, V, T)
-
-    quote
-        $H
-    end
+    T, V
 end
 
 function build_sparse(H::LatticeHamiltonian, V, T)
