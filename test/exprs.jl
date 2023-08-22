@@ -1,5 +1,9 @@
 using LatticeHamiltonians:
-    nonzero_elements, symbols_to_lookups, extract_matrix_elements, LiteralOrSymbolic
+    nonzero_elements,
+    symbols_to_lookups,
+    extract_matrix_elements,
+    LiteralOrSymbolic,
+    parse_hopping
 
 @testset "Expression manipulation" begin
     @testset "nonzero_elements" begin
@@ -35,26 +39,6 @@ using LatticeHamiltonians:
 
     @testset "extract_matrix_elements" begin
         @test extract_matrix_elements(
-            [:((1) -> [1 0; 0 1])],
-            :(V = []),
-            Dict{Symbol,ComplexF64}(),
-        ) == (
-            Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}(
-                [1] => ([1, 2], [1, 2], [1.0 + 0.0im, 1.0 + 0.0im]),
-            ),
-            LiteralOrSymbolic[],
-        )
-        @test extract_matrix_elements(
-            [:((1) -> [1 0; y z])],
-            :(V = []),
-            Dict{Symbol,ComplexF64}(:y => 2.0),
-        ) == (
-            Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}(
-                [1] => ([1, 2, 2], [1, 1, 2], [1.0 + 0.0im, :(params[:y]), :z]),
-            ),
-            LiteralOrSymbolic[],
-        )
-        @test extract_matrix_elements(
             [:((0, 1) -> [1 0; 0 1]), :((1, 1) -> [1 0; y z])],
             :(V = []),
             Dict{Symbol,ComplexF64}(:y => 2.0),
@@ -75,6 +59,26 @@ using LatticeHamiltonians:
                 Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}},
             }(),
             LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])],
+        )
+    end
+
+    @testset "parse_hopping" begin
+        @test parse_hopping(:((1) -> [1 0; 0 1]), Dict{Symbol,ComplexF64}()) == Pair{
+            Vector{Int64},
+            Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}},
+        }(
+            [1],
+            ([1, 2], [1, 2], [1.0 + 0.0im, 1.0 + 0.0im]),
+        )
+        @test parse_hopping(
+            :((1, 0, -1) -> [1 0; y z]),
+            Dict{Symbol,ComplexF64}(:y => 2.0),
+        ) == Pair{
+            Vector{Int64},
+            Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}},
+        }(
+            [1, 0, -1],
+            ([1, 2, 2], [1, 1, 2], [1.0 + 0.0im, :(params[:y]), :z]),
         )
     end
 end

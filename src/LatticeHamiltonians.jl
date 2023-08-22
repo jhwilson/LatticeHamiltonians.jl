@@ -226,31 +226,50 @@ function extract_matrix_elements(
     exprV::Expr,
     params::Dict{Symbol,ComplexF64},
 )
-    T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}()
-    for hop in hops
-        Base.remove_linenums!(hop)
-
-        # extract non-zero elements from the hopping matrix
-        m = hop.args[2].args[1]
-        rows, cols, values = nonzero_elements(m)
-
-        # replace parameter symbols in the hoppings with
-        # with lookups in the the parameter dictionary
-        values = LiteralOrSymbolic[symbols_to_lookups(v, params) for v in values]
-
-        if hop.args[1] isa Integer
-            args1 = [hop.args[1]]
-        else
-            args1 = Vector{Int}(hop.args[1].args)
-        end
-        T[args1] = (rows, cols, values)
-    end
+    T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}(
+        parse_hopping(hop, params) for hop in hops
+    )
 
     V = LiteralOrSymbolic[
         symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)
     ]
-
     T, V
+end
+
+"""
+    parse_hopping(hop::Expr, params::Dict{Symbol,ComplexF64})
+
+Extract the key and value from a hopping expression of the form
+
+    (δ1, δ2, ...) -> [t1 t2 ...; t3 t4 ...; ...]
+
+and return a pair of the form
+
+    key => (rows, cols, values)
+
+where `key` is a vector of integers that describe the hopping vector,
+and `rows`, `cols`, and `values` are vectors that describe the non-zero elements of the hopping matrix.
+"""
+function parse_hopping(hop::Expr, params::Dict{Symbol,ComplexF64})
+    Base.remove_linenums!(hop)
+
+    lhs = hop.args[1]
+
+    # extract non-zero elements from the hopping matrix
+    rhs = hop.args[2].args[1]
+    rows, cols, values = nonzero_elements(rhs)
+
+    # replace parameter symbols in the hoppings with
+    # with lookups in the the parameter dictionary
+    values = LiteralOrSymbolic[symbols_to_lookups(v, params) for v in values]
+
+    key = if lhs isa Integer
+        [lhs]
+    else
+        Vector{Int}(hop.args[1].args)
+    end
+
+    key => (rows, cols, values)
 end
 
 function build_sparse(H::LatticeHamiltonian, V, T)
