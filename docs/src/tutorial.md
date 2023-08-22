@@ -26,7 +26,7 @@ H = @lattice_hamiltonian begin
     # V represents the on-site energies for each lattice site.
     # Here, it's set to 1.0 for all sites in our 1D lattice.
     # This can be thought of as the energy cost for an electron to exist at a site.
-    V = ComplexF64[1.0]  # All sites have potential energy 1.0
+    V = [1.0]  # All sites have potential energy 1.0
 
     # the "hopping" terms, i.e., the probability of an electron "hopping" from one site to a neighboring site.
     (1) -> t # Hopping to the right neighbor with strength t
