@@ -19,6 +19,13 @@ Possible types of parameters for the potential and hopping functions.
 """
 LiteralOrSymbolic = Union{Symbol,Expr,ComplexF64}
 
+"""
+    SparseEntry{T}
+
+A tuple of the form `(i, j, val)` that describes a non-zero element of a `Matrix{T}`.
+"""
+SparseEntry{T} = Tuple{Vector{Int64},Vector{Int64},Vector{T}}
+
 include("build_lattice_operator.jl")
 
 """
@@ -226,7 +233,7 @@ function extract_matrix_elements(
     exprV::Expr,
     params::Dict{Symbol,ComplexF64},
 )
-    T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}(
+    T = Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
         parse_hopping(hop, params) for hop in hops
     )
 

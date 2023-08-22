@@ -3,6 +3,7 @@ using LatticeHamiltonians:
     symbols_to_lookups,
     extract_matrix_elements,
     LiteralOrSymbolic,
+    SparseEntry,
     parse_hopping
 
 @testset "Expression manipulation" begin
@@ -43,7 +44,7 @@ using LatticeHamiltonians:
             :(V = []),
             Dict{Symbol,ComplexF64}(:y => 2.0),
         ) == (
-            Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}(
+            Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
                 [0, 1] => ([1, 2], [1, 2], [1.0 + 0.0im, 1.0 + 0.0im]),
                 [1, 1] => ([1, 2, 2], [1, 1, 2], [1.0 + 0.0im, :(params[:y]), :z]),
             ),
@@ -54,29 +55,21 @@ using LatticeHamiltonians:
             :(V = [1, ψ, z]),
             Dict{Symbol,ComplexF64}(:z => 3),
         ) == (
-            Dict{
-                Vector{Int64},
-                Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}},
-            }(),
+            Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(),
             LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])],
         )
     end
 
     @testset "parse_hopping" begin
-        @test parse_hopping(:((1) -> [1 0; 0 1]), Dict{Symbol,ComplexF64}()) == Pair{
-            Vector{Int64},
-            Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}},
-        }(
+        @test parse_hopping(:((1) -> [1 0; 0 1]), Dict{Symbol,ComplexF64}()) ==
+              Pair{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
             [1],
             ([1, 2], [1, 2], [1.0 + 0.0im, 1.0 + 0.0im]),
         )
         @test parse_hopping(
             :((1, 0, -1) -> [1 0; y z]),
             Dict{Symbol,ComplexF64}(:y => 2.0),
-        ) == Pair{
-            Vector{Int64},
-            Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}},
-        }(
+        ) == Pair{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
             [1, 0, -1],
             ([1, 2, 2], [1, 1, 2], [1.0 + 0.0im, :(params[:y]), :z]),
         )
