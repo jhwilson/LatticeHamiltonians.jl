@@ -19,6 +19,13 @@ Possible types of parameters for the potential and hopping functions.
 """
 LiteralOrSymbolic = Union{Symbol,Expr,ComplexF64}
 
+"""
+    SparseEntry{T}
+
+A tuple of the form `(i, j, val)` that describes a non-zero element of a `Matrix{T}`.
+"""
+SparseEntry{T} = Tuple{Vector{Int64},Vector{Int64},Vector{T}}
+
 include("build_lattice_operator.jl")
 
 """
@@ -150,7 +157,7 @@ with 10 unit cells.
 macro lattice_hamiltonian(input)
     exprL = :()
     exprV = :()
-    hops = Vector()  # Store all hopping expressions in a vector
+    hops = Vector{Expr}()  # Store all hopping expressions in a vector
     params = Dict{Symbol,ComplexF64}() #Initialize dictionary
 
     for ex in input.args # loops over exprL/O/hops/params
@@ -196,33 +203,14 @@ macro lattice_hamiltonian(input)
     # which specifies on-site potentials
     d = length(Vector(exprV.args[2].args))
 
-    V = LiteralOrSymbolic[
-        symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)
-    ]
+    # Hamiltonian matrix elements
+    T, V = extract_matrix_elements(hops, exprV, params)
 
-    T = Dict{Vector{Int64},Tuple{Vector{Int64},Vector{Int64},Vector{LiteralOrSymbolic}}}()
-    for hop in hops
-        Base.remove_linenums!(hop)
+    # Real space structure
+    A = SMatrix{dim,dim,Float64}(I) #TODO
+    B = SMatrix{dim,dim,Float64}(I * 2 * pi) #TODO
+    r = fill(SVector{dim}(zeros(Float64, dim)), d) #TODO
 
-        # extract non-zero elements from the hopping matrix
-        m = hop.args[2].args[1]
-        rows, cols, values = nonzero_elements(m)
-
-        # replace parameter symbols in the hoppings with
-        # with lookups in the the parameter dictionary
-        values = LiteralOrSymbolic[symbols_to_lookups(v, params) for v in values]
-
-        if hop.args[1] isa Integer
-            args1 = [hop.args[1]]
-        else
-            args1 = Vector{Int}(hop.args[1].args)
-        end
-        T[args1] = (rows, cols, values)
-    end
-
-    A = SMatrix{dim,dim,Float64}(I)
-    B = SMatrix{dim,dim,Float64}(I * 2 * pi)
-    r = fill(SVector{dim}(zeros(Float64, dim)), d)
     apply = eval(make_apply(params, V, T, dim))
     H = LatticeHamiltonian(A, B, d, L, params, r, apply)
 
@@ -231,6 +219,64 @@ macro lattice_hamiltonian(input)
     quote
         $H
     end
+end
+
+"""
+    extract_matrix_elements(hops, exprV, params)
+
+Given a vector of hopping expressions, an expression for the on-site potential, and a dictionary of parameters,
+returns a tuple of the form `(T, V)` where `T` is an array of tuples `(rows, cols, values)` that
+describe the non-zero elements of the hopping matrix, and `V` is a vector of the on-site potentials.
+"""
+function extract_matrix_elements(
+    hops::Vector{Expr},
+    exprV::Expr,
+    params::Dict{Symbol,ComplexF64},
+)
+    T = Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
+        parse_hopping(hop, params) for hop in hops
+    )
+
+    V = LiteralOrSymbolic[
+        symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)
+    ]
+    T, V
+end
+
+"""
+    parse_hopping(hop::Expr, params::Dict{Symbol,ComplexF64})
+
+Extract the key and value from a hopping expression of the form
+
+    (δ1, δ2, ...) -> [t1 t2 ...; t3 t4 ...; ...]
+
+and return a pair of the form
+
+    key => (rows, cols, values)
+
+where `key` is a vector of integers that describe the hopping vector,
+and `rows`, `cols`, and `values` are vectors that describe the non-zero elements of the hopping matrix.
+"""
+function parse_hopping(hop::Expr, params::Dict{Symbol,ComplexF64})
+    Base.remove_linenums!(hop)
+
+    lhs = hop.args[1]
+
+    # extract non-zero elements from the hopping matrix
+    rhs = hop.args[2].args[1]
+    rows, cols, values = nonzero_elements(rhs)
+
+    # replace parameter symbols in the hoppings with
+    # with lookups in the the parameter dictionary
+    values = LiteralOrSymbolic[symbols_to_lookups(v, params) for v in values]
+
+    key = if lhs isa Integer
+        [lhs]
+    else
+        Vector{Int}(hop.args[1].args)
+    end
+
+    key => (rows, cols, values)
 end
 
 function build_sparse(H::LatticeHamiltonian, V, T)
