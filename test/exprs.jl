@@ -4,7 +4,8 @@ using LatticeHamiltonians:
     LiteralOrSymbolic,
     SparseEntry,
     parse_hopping,
-    parse_potential
+    parse_potential,
+    isonsite
 
 @testset "Expression manipulation" begin
     @testset "nonzero_elements" begin
@@ -36,6 +37,15 @@ using LatticeHamiltonians:
               :(params[:x] + params[:y])
         @test symbols_to_lookups(:(1 + x + z), Dict{Symbol,ComplexF64}(:x => 1, :y => 2)) ==
               :(1 + params[:x] + z)
+    end
+
+    @testset "isonsite" begin
+        @test isonsite(:(0 -> [1 0; 0 1])) == true
+        @test isonsite(:((0) -> [1 0; 0 1])) == true
+        @test isonsite(:((0, 0, 0) -> [1 0; 0 1])) == true
+        @test isonsite(:((0, 1, 0) -> [1 0; 0 1])) == false
+        @test isonsite(:((-1) -> [1 0; 0 1])) == false
+        @test isonsite(:(1 -> [1 0; 0 1])) == false
     end
 
     @testset "parse_potential" begin

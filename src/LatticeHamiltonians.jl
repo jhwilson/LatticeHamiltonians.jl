@@ -224,6 +224,23 @@ macro lattice_hamiltonian(input)
     end
 end
 
+"""
+    isonsite(expr::Expr)
+
+Given an expression of the form `δ -> [t1 t2 ...; t3 t4 ...; ...]`,
+checks if the hopping is on-site, i.e. if `δ` is zero.
+
+On site values for δ are
+
+    0 -> ...
+    (0) -> ...
+    (0, 0, ...) -> ...
+"""
+function isonsite(expr::Expr)
+    lhs = expr.args[1]
+    (lhs isa Number && iszero(lhs)) || (isexpr(lhs, :tuple) && all(iszero, lhs.args))
+end
+
 function parse_potential(exprV::Expr, params::Dict{Symbol,ComplexF64})
     LiteralOrSymbolic[symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)]
 end
