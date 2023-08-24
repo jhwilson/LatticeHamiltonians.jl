@@ -5,6 +5,7 @@ using LatticeHamiltonians:
     SparseEntry,
     parse_hopping,
     parse_potential,
+    extract_potential,
     isonsite
 
 @testset "Expression manipulation" begin
@@ -51,6 +52,27 @@ using LatticeHamiltonians:
     @testset "parse_potential" begin
         @test parse_potential(:(V = [1 ψ z]), Dict{Symbol,ComplexF64}(:z => 3)) ==
               LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])]
+    end
+
+    @testset "extract_potential" begin
+        @test extract_potential(
+            :(0 -> [1 0 0; 0 ψ 0; 0 0 z]),
+            1,
+            3,
+            Dict{Symbol,ComplexF64}(:z => 3),
+        ) == (LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])], nothing)
+        @test extract_potential(
+            :(0 -> [1 t 0; 0 ψ 0; j 0 z]),
+            1,
+            3,
+            Dict{Symbol,ComplexF64}(:z => 3),
+        ) == (
+            LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])],
+            Pair{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
+                [0],
+                ([1, 3], [2, 1], [:t, :j]),
+            ),
+        )
     end
 
     @testset "parse_hopping" begin

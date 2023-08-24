@@ -241,6 +241,56 @@ function isonsite(expr::Expr)
     (lhs isa Number && iszero(lhs)) || (isexpr(lhs, :tuple) && all(iszero, lhs.args))
 end
 
+"""
+    extract_potential(exprV::Expr, dim::Integer, d::Integer, params::Dict{Symbol,ComplexF64})
+
+Given an onsite hopping seperate the potential from the site-local hopping matrix.
+Allowed forms for the right hand side are the same as `parse_hopping`.
+
+Besides the expression, also takes as input the lattice dimension `dim`,
+the number of orbitals per site `d`, and the parameter dictionary `params`.
+
+Return as tuple of the form `(V, hop)`.
+
+The potential is returned as a vector of `LiteralOrSymbolic` values.
+If there is no non-zero onsite hopping, `hop=nothing`, otherwise `hop` is a `Pair` of the form
+
+    δ => (rows, cols, values)
+
+```@example
+extract_potential(:([Δ t; t -Δ], 1, 2, Dict{Symbol,ComplexF64}(:Δ => 1.0))
+```
+"""
+function extract_potential(exprV::Expr, dim::Integer, d::Integer, params::Dict{Symbol,ComplexF64})
+  pair = parse_hopping(exprV, params)
+  (rows, cols, values) = pair[2]
+
+  # on site hoppings
+  orows = Int[]
+  ocols = Int[]
+  ovalues = LiteralOrSymbolic[]
+
+
+  # on site potential
+  V = Vector{LiteralOrSymbolic}(undef, d)
+  fill!(V, zero(ComplexF64))
+
+  # seperate the diagonal and off-diagonal elements
+  for (r, c, v) in zip(rows, cols, values)
+    if r == c
+      V[r] = v
+    else
+      push!(orows, r)
+      push!(ocols, c)
+      push!(ovalues, v)
+    end
+  end
+
+  hop = isempty(orows) ? nothing : zeros(Int, dim) => (orows, ocols, ovalues)
+
+  V, hop
+end
+
 function parse_potential(exprV::Expr, params::Dict{Symbol,ComplexF64})
     LiteralOrSymbolic[symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)]
 end
