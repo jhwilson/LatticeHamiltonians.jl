@@ -267,9 +267,6 @@ extract_potential(:([Δ t; t -Δ], 1, 2, Dict{Symbol,ComplexF64}(:Δ => 1.0))
 ```
 """
 function extract_potential(exprV::Expr, dim::Int, d::Int, params::Dict{Symbol,ComplexF64})
-  pair = parse_hopping(exprV, params)
-  (rows, cols, values) = pair[2]
-
   # on site hoppings
   orows = Int[]
   ocols = Int[]
@@ -279,6 +276,15 @@ function extract_potential(exprV::Expr, dim::Int, d::Int, params::Dict{Symbol,Co
   # on site potential
   V = Vector{LiteralOrSymbolic}(undef, d)
   fill!(V, zero(ComplexF64))
+
+  # implicitly set V to zero if not provided
+  if exprV == :()
+    return V, nothing
+  end
+
+  pair = parse_hopping(exprV, params)
+  (rows, cols, values) = pair[2]
+
 
   # seperate the diagonal and off-diagonal elements
   for (r, c, v) in zip(rows, cols, values)

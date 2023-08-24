@@ -51,6 +51,8 @@ using LatticeHamiltonians:
     end
 
     @testset "extract_potential" begin
+        @test extract_potential(:(), 1, 3, Dict{Symbol,ComplexF64}(:z => 3)) ==
+              (LiteralOrSymbolic[0.0+0.0im, 0.0+0.0im, 0.0+0.0im], nothing)
         @test extract_potential(
             :(0 -> [1, ψ, z]),
             1,
