@@ -4,7 +4,6 @@ using LatticeHamiltonians:
     LiteralOrSymbolic,
     SparseEntry,
     parse_hopping,
-    parse_potential,
     extract_potential,
     isonsite
 
@@ -49,11 +48,6 @@ using LatticeHamiltonians:
         @test isonsite(:((0, 1, 0) -> [1 0; 0 1])) == false
         @test isonsite(:((-1) -> [1 0; 0 1])) == false
         @test isonsite(:(1 -> [1 0; 0 1])) == false
-    end
-
-    @testset "parse_potential" begin
-        @test parse_potential(:(V = [1 ψ z]), Dict{Symbol,ComplexF64}(:z => 3)) ==
-              LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])]
     end
 
     @testset "extract_potential" begin

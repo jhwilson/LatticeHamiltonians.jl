@@ -157,6 +157,7 @@ with 10 unit cells.
 macro lattice_hamiltonian(input)
     exprL = :()
     exprV = :()
+    exprd = :()
     hops = Vector{Expr}()  # Store all hopping expressions in a vector
     params = Dict{Symbol,ComplexF64}() #Initialize dictionary
 
@@ -168,10 +169,14 @@ macro lattice_hamiltonian(input)
         end
         if ex.args[1] == :L
             exprL = ex
-        elseif ex.args[1] == :V
-            exprV = ex
         elseif ex.head == :(->)
-            push!(hops, ex)  # Add hopping expression to the vector
+            # seperate out the onsite hopping matrix
+            # as it requires special handling
+            if isonsite(ex)
+              exprV = ex
+            else
+              push!(hops, ex)  # Add hopping expression to the vector
+            end
         elseif ex.head == :(=)
             param_key = ex.args[1]
             param_val = eval(ex.args[2])
@@ -190,24 +195,24 @@ macro lattice_hamiltonian(input)
         error("Invalid input. Expected a vector of integers.")
     end
 
-    if !(typeof(exprV.args[2].args) <: Vector)
-        error("Invalid input. Expected a vector for V.")
-    end
-
     L = MVector{length(L),Int}(L)
     if isempty(hops)
         error("Invalid input. Expected at least one hopping expression.")
     end
 
-    # set the on site dimensionality from the length of the V vector
-    # which specifies on-site potentials
-    d = length(Vector(exprV.args[2].args))
 
     # Hamiltonian matrix elements
     T = Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
         parse_hopping(hop, params) for hop in hops
     )
-    V = parse_potential(exprV, params)
+    # compute the number of orbitals as the maximum index of the hopping matrix
+    d = maximum([max(maximum(t.second[1]), maximum(t.second[2])) for t in T])
+
+    # Extract the onsite potential and hopping
+    V, onsite = extract_potential(exprV, dim, d, params)
+    if onsite !== nothing
+      T[onsite.first] = onsite.second
+    end
 
     # Real space structure
     A = SMatrix{dim,dim,Float64}(I) #TODO
@@ -242,7 +247,7 @@ function isonsite(expr::Expr)
 end
 
 """
-    extract_potential(exprV::Expr, dim::Integer, d::Integer, params::Dict{Symbol,ComplexF64})
+    extract_potential(exprV, dim, d, params::Dict{Symbol,ComplexF64})
 
 Given an onsite hopping seperate the potential from the site-local hopping matrix.
 Allowed forms for the right hand side are the same as `parse_hopping`.
@@ -261,7 +266,7 @@ If there is no non-zero onsite hopping, `hop=nothing`, otherwise `hop` is a `Pai
 extract_potential(:([Δ t; t -Δ], 1, 2, Dict{Symbol,ComplexF64}(:Δ => 1.0))
 ```
 """
-function extract_potential(exprV::Expr, dim::Integer, d::Integer, params::Dict{Symbol,ComplexF64})
+function extract_potential(exprV::Expr, dim::Int, d::Int, params::Dict{Symbol,ComplexF64})
   pair = parse_hopping(exprV, params)
   (rows, cols, values) = pair[2]
 
@@ -289,10 +294,6 @@ function extract_potential(exprV::Expr, dim::Integer, d::Integer, params::Dict{S
   hop = isempty(orows) ? nothing : zeros(Int, dim) => (orows, ocols, ovalues)
 
   V, hop
-end
-
-function parse_potential(exprV::Expr, params::Dict{Symbol,ComplexF64})
-    LiteralOrSymbolic[symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)]
 end
 
 """

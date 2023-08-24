@@ -45,7 +45,6 @@ end
 @testset "Polyacetylene" begin
     H = @lattice_hamiltonian begin
         L = [10]
-        V = [0.0, 0.0]
         (0) -> [0 t1; t1 0]
         (1) -> [0 t2; 0 0]
         (-1) -> [0 0; t2 0]
