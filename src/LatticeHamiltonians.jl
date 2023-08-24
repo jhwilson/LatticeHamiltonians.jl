@@ -204,7 +204,10 @@ macro lattice_hamiltonian(input)
     d = length(Vector(exprV.args[2].args))
 
     # Hamiltonian matrix elements
-    T, V = extract_matrix_elements(hops, exprV, params)
+    T = Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
+        parse_hopping(hop, params) for hop in hops
+    )
+    V = parse_potential(exprV, params)
 
     # Real space structure
     A = SMatrix{dim,dim,Float64}(I) #TODO
@@ -221,26 +224,8 @@ macro lattice_hamiltonian(input)
     end
 end
 
-"""
-    extract_matrix_elements(hops, exprV, params)
-
-Given a vector of hopping expressions, an expression for the on-site potential, and a dictionary of parameters,
-returns a tuple of the form `(T, V)` where `T` is an array of tuples `(rows, cols, values)` that
-describe the non-zero elements of the hopping matrix, and `V` is a vector of the on-site potentials.
-"""
-function extract_matrix_elements(
-    hops::Vector{Expr},
-    exprV::Expr,
-    params::Dict{Symbol,ComplexF64},
-)
-    T = Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
-        parse_hopping(hop, params) for hop in hops
-    )
-
-    V = LiteralOrSymbolic[
-        symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)
-    ]
-    T, V
+function parse_potential(exprV::Expr, params::Dict{Symbol,ComplexF64})
+    LiteralOrSymbolic[symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)]
 end
 
 """

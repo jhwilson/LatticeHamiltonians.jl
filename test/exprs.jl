@@ -1,10 +1,10 @@
 using LatticeHamiltonians:
     nonzero_elements,
     symbols_to_lookups,
-    extract_matrix_elements,
     LiteralOrSymbolic,
     SparseEntry,
-    parse_hopping
+    parse_hopping,
+    parse_potential
 
 @testset "Expression manipulation" begin
     @testset "nonzero_elements" begin
@@ -38,26 +38,9 @@ using LatticeHamiltonians:
               :(1 + params[:x] + z)
     end
 
-    @testset "extract_matrix_elements" begin
-        @test extract_matrix_elements(
-            [:((0, 1) -> [1 0; 0 1]), :((1, 1) -> [1 0; y z])],
-            :(V = []),
-            Dict{Symbol,ComplexF64}(:y => 2.0),
-        ) == (
-            Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
-                [0, 1] => ([1, 2], [1, 2], [1.0 + 0.0im, 1.0 + 0.0im]),
-                [1, 1] => ([1, 2, 2], [1, 1, 2], [1.0 + 0.0im, :(params[:y]), :z]),
-            ),
-            LiteralOrSymbolic[],
-        )
-        @test extract_matrix_elements(
-            Expr[],
-            :(V = [1, ψ, z]),
-            Dict{Symbol,ComplexF64}(:z => 3),
-        ) == (
-            Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(),
-            LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])],
-        )
+    @testset "parse_potential" begin
+        @test parse_potential(:(V = [1 ψ z]), Dict{Symbol,ComplexF64}(:z => 3)) ==
+              LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])]
     end
 
     @testset "parse_hopping" begin
@@ -74,10 +57,8 @@ using LatticeHamiltonians:
             ([1, 2, 2], [1, 1, 2], [1.0 + 0.0im, :(params[:y]), :z]),
         )
         # allows singletons
-        @test parse_hopping(
-            :((1, 0, -1) -> 1),
-            Dict{Symbol,ComplexF64}(:y => 2.0),
-        ) == Pair{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
+        @test parse_hopping(:((1, 0, -1) -> 1), Dict{Symbol,ComplexF64}(:y => 2.0)) ==
+              Pair{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
             [1, 0, -1],
             ([1], [1], [1.0 + 0.0im]),
         )
