@@ -19,7 +19,7 @@ H = \sum_{\langle ij\rangle} t c_i^\dagger c_j + \sum_i V c^\dagger_ic_i
 
 The complete code for construction the Hamiltonian is:
 
-```julia
+```@example
 using LatticeHamiltonians
 
 H = @lattice_hamiltonian begin
@@ -38,10 +38,12 @@ H = @lattice_hamiltonian begin
     # Here, it's [100], meaning we have a 1D lattice (a line) with 100 sites.
     L = [100]  # 1D lattice with 100 sites
 end
+
+nothing #hide
 ```
 Some explanation of the domain specific language (DSL) used here is in order.
 
-1. `V = ComplexF64[1.0]  # All sites have potential energy 1.0`
+1. `V = [1.0]  # All sites have potential energy 1.0`
 
     - We can set an on site potential value for each orbital at a given site. Since this module has only one orbital `V` has only a single element.
 
