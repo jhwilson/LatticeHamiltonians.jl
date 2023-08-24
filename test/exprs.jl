@@ -14,6 +14,8 @@ using LatticeHamiltonians:
               (rows = [1, 2], cols = [1, 2], vals = [1, 1])
         @test nonzero_elements(:([x 0; 0 y])) ==
               (rows = [1, 2], cols = [1, 2], vals = [:x, :y])
+        @test nonzero_elements(:([1, 0, 2, 3, ψ, 0, 0])) ==
+              (rows = [1, 3, 4, 5], cols = [1, 3, 4, 5], vals = [1, 2, 3, :ψ])
         @test nonzero_elements(:([
             1 0 2
             3 4.0 0
@@ -55,6 +57,12 @@ using LatticeHamiltonians:
     end
 
     @testset "extract_potential" begin
+        @test extract_potential(
+            :(0 -> [1, ψ, z]),
+            1,
+            3,
+            Dict{Symbol,ComplexF64}(:z => 3),
+        ) == (LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])], nothing)
         @test extract_potential(
             :(0 -> [1 0 0; 0 ψ 0; 0 0 z]),
             1,
@@ -101,6 +109,14 @@ using LatticeHamiltonians:
         ) == Pair{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
             [1, 0, -1],
             ([1, 2, 2], [1, 1, 2], [1.0 + 0.0im, :(params[:y]), :z]),
+        )
+        # allow vectors
+        @test parse_hopping(
+            :((1, 0, -1) -> [1, y, z]),
+            Dict{Symbol,ComplexF64}(:y => 2.0),
+        ) == Pair{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
+            [1, 0, -1],
+            ([1, 2, 3], [1, 2, 3], [1.0 + 0.0im, :(params[:y]), :z]),
         )
     end
 end

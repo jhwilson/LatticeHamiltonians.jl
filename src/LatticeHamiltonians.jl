@@ -319,7 +319,7 @@ function parse_hopping(hop::Expr, params::Dict{Symbol,ComplexF64})
     # extract non-zero elements from the hopping matrix
     rhs = hop.args[2].args[1]
 
-    rows, cols, values = if isexpr(rhs, :vcat)
+    rows, cols, values = if isexpr(rhs, :vcat, :vect)
         nonzero_elements(rhs)
     elseif isexpr(rhs, :tuple)
         Tuple([item.args for item in rhs.args])
@@ -385,32 +385,57 @@ function symbols_to_lookups(expr, params::Dict{Symbol,ComplexF64})
     end, expr)
 end
 
+
+
 """
     nonzero_elements(matrix)
 
 Takes an expression describing a matrix and returns a named tuple of vectors (rows, cols, vals)
 where each vector respectively contains the row, column, and value of a nonzero element in the matrix.
 All numbers are converted to `ComplexF64` numbers.
+
+If passed a vector, returns the nonzero elements of the corresponding diagonal matrix.
 """
 function nonzero_elements(matrix::Expr)
     rows = Int[]
     cols = Int[]
     vals = LiteralOrSymbolic[]
-
-    for (ri, row) in enumerate(matrix.args)
-        for (ci, elem) in enumerate(row.args)
-            if !(elem isa Number && iszero(elem))
-                push!(rows, ri)
-                push!(cols, ci)
-                if elem isa Number
-                    push!(vals, ComplexF64(elem))
-                else
-                    push!(vals, elem)
-                end
+    foreach_element(matrix) do ri, ci, elem
+        if !(elem isa Number && iszero(elem))
+            push!(rows, ri)
+            push!(cols, ci)
+            if elem isa Number
+                push!(vals, ComplexF64(elem))
+            else
+                push!(vals, elem)
             end
         end
     end
     return (rows = rows, cols = cols, vals = vals)
+end
+
+"""
+    foreach_element(f :: Function, expr::Expr)
+
+Generic iteration over elements of a matrix or vector expression.
+`f` should be a function of the form `f(ri, ci, elem)`
+where `ri` and `ci` are the row and column indices of the element,
+and `elem` is the value.
+"""
+function foreach_element(f :: Function, expr::Expr)
+    if isexpr(expr, :vcat)
+    for (ri, row) in enumerate(expr.args)
+        for (ci, elem) in enumerate(row.args)
+            f(ri, ci, elem)
+        end
+    end
+  elseif isexpr(expr, :vect)
+    for (i, elem) in enumerate(expr.args)
+            f(i, i, elem)
+    end
+  else
+    throw(ArgumentError("Expected a matrix or vector"))
+  end
 end
 
 end
