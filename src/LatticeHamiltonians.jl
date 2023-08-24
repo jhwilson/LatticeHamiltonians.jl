@@ -257,6 +257,8 @@ and return a pair of the form
 
 where `key` is a vector of integers that describe the hopping vector,
 and `rows`, `cols`, and `values` are vectors that describe the non-zero elements of the hopping matrix.
+
+The hopping matrix itself may be a singleton, a matrix literal, or a tuple of vectors `(rows, cols, values)`.
 """
 function parse_hopping(hop::Expr, params::Dict{Symbol,ComplexF64})
     Base.remove_linenums!(hop)
@@ -265,7 +267,14 @@ function parse_hopping(hop::Expr, params::Dict{Symbol,ComplexF64})
 
     # extract non-zero elements from the hopping matrix
     rhs = hop.args[2].args[1]
-    rows, cols, values = nonzero_elements(rhs)
+
+    rows, cols, values = if isexpr(rhs, :vcat)
+        nonzero_elements(rhs)
+    elseif isexpr(rhs, :tuple)
+        Tuple([item.args for item in rhs.args])
+    else
+        [1], [1], [rhs]
+    end
 
     # replace parameter symbols in the hoppings with
     # with lookups in the the parameter dictionary

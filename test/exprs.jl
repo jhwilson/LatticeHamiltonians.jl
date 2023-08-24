@@ -73,5 +73,21 @@ using LatticeHamiltonians:
             [1, 0, -1],
             ([1, 2, 2], [1, 1, 2], [1.0 + 0.0im, :(params[:y]), :z]),
         )
+        # allows singletons
+        @test parse_hopping(
+            :((1, 0, -1) -> 1),
+            Dict{Symbol,ComplexF64}(:y => 2.0),
+        ) == Pair{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
+            [1, 0, -1],
+            ([1], [1], [1.0 + 0.0im]),
+        )
+        # allows tuples
+        @test parse_hopping(
+            :((1, 0, -1) -> ([1, 2, 2], [1, 1, 2], [1, y, z])),
+            Dict{Symbol,ComplexF64}(:y => 2.0),
+        ) == Pair{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
+            [1, 0, -1],
+            ([1, 2, 2], [1, 1, 2], [1.0 + 0.0im, :(params[:y]), :z]),
+        )
     end
 end
