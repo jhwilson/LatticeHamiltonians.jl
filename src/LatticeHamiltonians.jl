@@ -157,6 +157,7 @@ with 10 unit cells.
 macro lattice_hamiltonian(input)
     exprL = :()
     exprV = :()
+    exprd = :()
     hops = Vector{Expr}()  # Store all hopping expressions in a vector
     params = Dict{Symbol,ComplexF64}() #Initialize dictionary
 
@@ -168,10 +169,14 @@ macro lattice_hamiltonian(input)
         end
         if ex.args[1] == :L
             exprL = ex
-        elseif ex.args[1] == :V
-            exprV = ex
         elseif ex.head == :(->)
-            push!(hops, ex)  # Add hopping expression to the vector
+            # seperate out the onsite hopping matrix
+            # as it requires special handling
+            if isonsite(ex)
+              exprV = ex
+            else
+              push!(hops, ex)  # Add hopping expression to the vector
+            end
         elseif ex.head == :(=)
             param_key = ex.args[1]
             param_val = eval(ex.args[2])
@@ -190,21 +195,24 @@ macro lattice_hamiltonian(input)
         error("Invalid input. Expected a vector of integers.")
     end
 
-    if !(typeof(exprV.args[2].args) <: Vector)
-        error("Invalid input. Expected a vector for V.")
-    end
-
     L = MVector{length(L),Int}(L)
     if isempty(hops)
         error("Invalid input. Expected at least one hopping expression.")
     end
 
-    # set the on site dimensionality from the length of the V vector
-    # which specifies on-site potentials
-    d = length(Vector(exprV.args[2].args))
 
     # Hamiltonian matrix elements
-    T, V = extract_matrix_elements(hops, exprV, params)
+    T = Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
+        parse_hopping(hop, params) for hop in hops
+    )
+    # compute the number of orbitals as the maximum index of the hopping matrix
+    d = maximum([max(maximum(t.second[1]), maximum(t.second[2])) for t in T])
+
+    # Extract the onsite potential and hopping
+    V, onsite = extract_potential(exprV, dim, d, params)
+    if onsite !== nothing
+      T[onsite.first] = onsite.second
+    end
 
     # Real space structure    println(T)
 
@@ -223,25 +231,76 @@ macro lattice_hamiltonian(input)
 end
 
 """
-    extract_matrix_elements(hops, exprV, params)
+    isonsite(expr::Expr)
 
-Given a vector of hopping expressions, an expression for the on-site potential, and a dictionary of parameters,
-returns a tuple of the form `(T, V)` where `T` is an array of tuples `(rows, cols, values)` that
-describe the non-zero elements of the hopping matrix, and `V` is a vector of the on-site potentials.
+Given an expression of the form `δ -> [t1 t2 ...; t3 t4 ...; ...]`,
+checks if the hopping is on-site, i.e. if `δ` is zero.
+
+On site values for δ are
+
+    0 -> ...
+    (0) -> ...
+    (0, 0, ...) -> ...
 """
-function extract_matrix_elements(
-    hops::Vector{Expr},
-    exprV::Expr,
-    params::Dict{Symbol,ComplexF64},
-)
-    T = Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
-        parse_hopping(hop, params) for hop in hops
-    )
+function isonsite(expr::Expr)
+    lhs = expr.args[1]
+    (lhs isa Number && iszero(lhs)) || (isexpr(lhs, :tuple) && all(iszero, lhs.args))
+end
 
-    V = LiteralOrSymbolic[
-        symbols_to_lookups(arg, params) for arg in Vector(exprV.args[2].args)
-    ]
-    T, V
+"""
+    extract_potential(exprV, dim, d, params::Dict{Symbol,ComplexF64})
+
+Given an onsite hopping seperate the potential from the site-local hopping matrix.
+Allowed forms for the right hand side are the same as `parse_hopping`.
+
+Besides the expression, also takes as input the lattice dimension `dim`,
+the number of orbitals per site `d`, and the parameter dictionary `params`.
+
+Return as tuple of the form `(V, hop)`.
+
+The potential is returned as a vector of `LiteralOrSymbolic` values.
+If there is no non-zero onsite hopping, `hop=nothing`, otherwise `hop` is a `Pair` of the form
+
+    δ => (rows, cols, values)
+
+```@example
+extract_potential(:([Δ t; t -Δ], 1, 2, Dict{Symbol,ComplexF64}(:Δ => 1.0))
+```
+"""
+function extract_potential(exprV::Expr, dim::Int, d::Int, params::Dict{Symbol,ComplexF64})
+  # on site hoppings
+  orows = Int[]
+  ocols = Int[]
+  ovalues = LiteralOrSymbolic[]
+
+
+  # on site potential
+  V = Vector{LiteralOrSymbolic}(undef, d)
+  fill!(V, zero(ComplexF64))
+
+  # implicitly set V to zero if not provided
+  if exprV == :()
+    return V, nothing
+  end
+
+  pair = parse_hopping(exprV, params)
+  (rows, cols, values) = pair[2]
+
+
+  # seperate the diagonal and off-diagonal elements
+  for (r, c, v) in zip(rows, cols, values)
+    if r == c
+      V[r] = v
+    else
+      push!(orows, r)
+      push!(ocols, c)
+      push!(ovalues, v)
+    end
+  end
+
+  hop = isempty(orows) ? nothing : zeros(Int, dim) => (orows, ocols, ovalues)
+
+  V, hop
 end
 
 """
@@ -268,7 +327,7 @@ function parse_hopping(hop::Expr, params::Dict{Symbol,ComplexF64})
     # extract non-zero elements from the hopping matrix
     rhs = hop.args[2].args[1]
 
-    rows, cols, values = if isexpr(rhs, :vcat)
+    rows, cols, values = if isexpr(rhs, :vcat, :vect)
         nonzero_elements(rhs)
     elseif isexpr(rhs, :tuple)
         Tuple([item.args for item in rhs.args])
@@ -334,32 +393,57 @@ function symbols_to_lookups(expr, params::Dict{Symbol,ComplexF64})
     end, expr)
 end
 
+
+
 """
     nonzero_elements(matrix)
 
 Takes an expression describing a matrix and returns a named tuple of vectors (rows, cols, vals)
 where each vector respectively contains the row, column, and value of a nonzero element in the matrix.
 All numbers are converted to `ComplexF64` numbers.
+
+If passed a vector, returns the nonzero elements of the corresponding diagonal matrix.
 """
 function nonzero_elements(matrix::Expr)
     rows = Int[]
     cols = Int[]
     vals = LiteralOrSymbolic[]
-
-    for (ri, row) in enumerate(matrix.args)
-        for (ci, elem) in enumerate(row.args)
-            if !(elem isa Number && iszero(elem))
-                push!(rows, ri)
-                push!(cols, ci)
-                if elem isa Number
-                    push!(vals, ComplexF64(elem))
-                else
-                    push!(vals, elem)
-                end
+    foreach_element(matrix) do ri, ci, elem
+        if !(elem isa Number && iszero(elem))
+            push!(rows, ri)
+            push!(cols, ci)
+            if elem isa Number
+                push!(vals, ComplexF64(elem))
+            else
+                push!(vals, elem)
             end
         end
     end
     return (rows = rows, cols = cols, vals = vals)
+end
+
+"""
+    foreach_element(f :: Function, expr::Expr)
+
+Generic iteration over elements of a matrix or vector expression.
+`f` should be a function of the form `f(ri, ci, elem)`
+where `ri` and `ci` are the row and column indices of the element,
+and `elem` is the value.
+"""
+function foreach_element(f :: Function, expr::Expr)
+    if isexpr(expr, :vcat)
+    for (ri, row) in enumerate(expr.args)
+        for (ci, elem) in enumerate(row.args)
+            f(ri, ci, elem)
+        end
+    end
+  elseif isexpr(expr, :vect)
+    for (i, elem) in enumerate(expr.args)
+            f(i, i, elem)
+    end
+  else
+    throw(ArgumentError("Expected a matrix or vector"))
+  end
 end
 
 end
