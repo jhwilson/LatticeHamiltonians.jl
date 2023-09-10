@@ -43,7 +43,7 @@ nothing #hide
 ```
 Some explanation of the domain specific language (DSL) used here is in order.
 
-1. `(0) -> = 1.0  # All sites have potential energy 1.0`
+1. `(0) -> 1.0  # All sites have potential energy 1.0`
 
     - We can set an on site potential value for each orbital at a given site. Since this module has only one orbital the on site matrix has is simply a number.
 
