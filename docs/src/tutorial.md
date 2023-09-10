@@ -23,10 +23,10 @@ The complete code for construction the Hamiltonian is:
 using LatticeHamiltonians
 
 H = @lattice_hamiltonian begin
-    # V represents the on-site energies for each lattice site.
+    # On site hopings are represented as diagonal elements of a hopping by `0`.
     # Here, it's set to 1.0 for all sites in our 1D lattice.
     # This can be thought of as the energy cost for an electron to exist at a site.
-    V = [1.0]  # All sites have potential energy 1.0
+    (0) -> 1.0  # All sites have potential energy 1.0
 
     # the "hopping" terms, i.e., the probability of an electron "hopping" from one site to a neighboring site.
     (1) -> t # Hopping to the right neighbor with strength t
@@ -43,9 +43,9 @@ nothing #hide
 ```
 Some explanation of the domain specific language (DSL) used here is in order.
 
-1. `V = [1.0]  # All sites have potential energy 1.0`
+1. `(0) -> 1.0  # All sites have potential energy 1.0`
 
-    - We can set an on site potential value for each orbital at a given site. Since this module has only one orbital `V` has only a single element.
+    - We can set an on site potential value for each orbital at a given site. Since this module has only one orbital the on site matrix has is simply a number.
 
 2. `(1) -> t # Hopping to the right neighbor with strength t`
 
@@ -90,7 +90,7 @@ and the corresponding code is
 
 ```julia
 H = @lattice_hamiltonian begin
-  V = [-1.0, 1.0]  # orbitals have different potentials
+  (0) -> [-1.0, 1.0]  # orbitals have different potentials
   # Hopping in the x direction with strength tx
   # only occurs between different orbitals
   (1, 0) -> [0 tx
@@ -151,7 +151,7 @@ We can easily construct the lattice Hamiltonian
 using LatticeHamiltonians #hide
 H = @lattice_hamiltonian begin
   L = [10, 20] # 2D lattice with 10x20 sites
-  V = [Δ, -Δ]
+  (0) -> [Δ, -Δ]
   (0, 0) -> [0 t ; t 0]
   (1, 0) -> [0 0 ; t 0]
   (0, 1) -> [0 0 ; t 0]
