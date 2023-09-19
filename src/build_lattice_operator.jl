@@ -111,25 +111,25 @@ function loop_periodic(hops, ex; s = :n)
     quote
         ind1 = 0
         ind2 = d * $(site_expr(hops))
-        $(loop_periodic(s, hops, ex, length(hops)))
+        $(loop_periodic(s, hops, ex, length(hops), 0))
     end
 end
 
 function loop_periodic_diag(dim, d, ex; s = :n)
     quote
         ind1 = 0
-        $(loop_periodic(s, zeros(Int, dim), ex, dim))
+        $(loop_periodic(s, zeros(Int, dim), ex, dim, 0))
     end
 end
 
-function loop_periodic(s, hop, ex, j)
+function loop_periodic(s, hop, ex, j, flag)
     if j == 0
         return ex
     end
     m::Int = hop[j]
     sj = Symbol("$(s)$j")
     Lprodj = Symbol("Lprod$j")
-    if m < 0
+    if m < 0 && flag == 0
         expr = quote
             for $sj = 1:$(-m)
                 $(loop_periodic(s, hop, ex, j - 1))
@@ -138,9 +138,17 @@ function loop_periodic(s, hop, ex, j)
             for $sj = $(-m + 1):L[$j]
                 $(loop_periodic(s, hop, ex, j - 1))
             end
-            ind2 += $Lprodj
+            ind2 += $Lprodj    
         end
-    elseif m > 0
+    elseif m < 0 && flag == 1
+        expr = quote
+            for $sj = 1:$(-m)
+                $(loop_periodic(s, hop, ex, j - 1))
+            end
+            ind1 += m* $Lprodj-1
+            ind2 += m* $Lprodj-1   
+        end
+    elseif m > 0 && flag == 0
         expr = quote
             for $sj = 1:(L[$j]-$m)
                 $(loop_periodic(s, hop, ex, j - 1))
@@ -150,6 +158,14 @@ function loop_periodic(s, hop, ex, j)
                 $(loop_periodic(s, hop, ex, j - 1))
             end
             ind2 += $Lprodj
+        end
+    elseif m > 0 && flag == 1
+        expr = quote
+            ind1 += m* $Lprodj-1
+            for $sj = (L[$j]-$(m - 1)):L[$j]
+                $(loop_periodic(s, hop, ex, j - 1))
+            end
+            ind2 += m* $Lprodj-1
         end
     else
         expr = quote
