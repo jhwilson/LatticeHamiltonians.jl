@@ -111,66 +111,80 @@ function loop_periodic(hops, ex; s = :n)
     quote
         ind1 = 0
         ind2 = d * $(site_expr(hops))
-        $(loop_periodic(s, hops, ex, length(hops), 0))
+        $(loop_periodic(s, hops, ex, length(hops), "Periodic"))
     end
 end
 
 function loop_periodic_diag(dim, d, ex; s = :n)
     quote
         ind1 = 0
-        $(loop_periodic(s, zeros(Int, dim), ex, dim, 0))
+        $(loop_periodic(s, zeros(Int, dim), ex, dim, "Periodic"))
     end
 end
 
-function loop_periodic(s, hop, ex, j; BCs = "periodic")  # need to replace flag with BCs
+function loop_periodic(s, hop, ex, j; BCs = "Periodic")  # dim = s in recursive calls, not j
     if j == 0
         return ex
+    end
+    if BCs == "Periodic"
+        BCs = ones(Bool, j)
+    elseif BCs == "Open"
+        BCs = zeros(Bool, j)
+    else
+        if eltype(BCs) <: Bool
+            if length(BCs) != j
+                error("BCs if mixed or not should be array with length matching no. of dims")
+            end
+        else 
+            error("BCs should be Bools")     
+        end
+
     end
     m::Int = hop[j]
     sj = Symbol("$(s)$j")
     Lprodj = Symbol("Lprod$j")
-    if m < 0 && flag == 0
+    if m < 0 && !BCs[j]
         expr = quote
             for $sj = 1:$(-m)
-                $(loop_periodic(s, hop, ex, j - 1))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind2 -= $Lprodj
             for $sj = $(-m + 1):L[$j]
-                $(loop_periodic(s, hop, ex, j - 1))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind2 += $Lprodj    
         end
-    elseif m < 0 && flag == 1 #change to comport with function header
+    elseif m < 0 && BCs[j] #change to comport with function header
         expr = quote
             for $sj = 1:$(-m)
-                $(loop_periodic(s, hop, ex, j - 1))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind1 += m* $Lprodj-1
             ind2 += m* $Lprodj-1   
         end
-    elseif m > 0 && flag == 0 #change to comport with function header
+    elseif m > 0 && !BCs[j] #change to comport with function header
         expr = quote
             for $sj = 1:(L[$j]-$m)
-                $(loop_periodic(s, hop, ex, j - 1))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind2 -= $Lprodj
             for $sj = (L[$j]-$(m - 1)):L[$j]
-                $(loop_periodic(s, hop, ex, j - 1))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind2 += $Lprodj
         end
-    elseif m > 0 && flag == 1
+    elseif m > 0 && BCs[j]
         expr = quote
             ind1 += m* $Lprodj-1
             for $sj = (L[$j]-$(m - 1)):L[$j]
-                $(loop_periodic(s, hop, ex, j - 1))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind2 += m* $Lprodj-1
         end
     else
         expr = quote
             for $sj = 1:L[$j]
-                $(loop_periodic(s, hop, ex, j - 1))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
         end
     end
