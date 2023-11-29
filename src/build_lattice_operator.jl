@@ -102,7 +102,7 @@ end
 """
     loop_periodic(hops, ex; s = :n)
     loop_periodic_diag(dim, d, ex; s = :n)
-    loop_periodic(s, hop, ex, j)
+    loop_periodic(s, hop, ex, j, BCs = "T, T, F"), ex. array for periodic in two directions and open in one
 
 Generate an `Expr` block for loops iterating over lattice sites
 in a periodic system.
@@ -122,7 +122,7 @@ function loop_periodic_diag(dim, d, ex; s = :n)
     end
 end
 
-function loop_periodic(s, hop, ex, j, flag)
+function loop_periodic(s, hop, ex, j; BCs = "periodic")  # need to replace flag with BCs
     if j == 0
         return ex
     end
@@ -140,7 +140,7 @@ function loop_periodic(s, hop, ex, j, flag)
             end
             ind2 += $Lprodj    
         end
-    elseif m < 0 && flag == 1
+    elseif m < 0 && flag == 1 #change to comport with function header
         expr = quote
             for $sj = 1:$(-m)
                 $(loop_periodic(s, hop, ex, j - 1))
@@ -148,7 +148,7 @@ function loop_periodic(s, hop, ex, j, flag)
             ind1 += m* $Lprodj-1
             ind2 += m* $Lprodj-1   
         end
-    elseif m > 0 && flag == 0
+    elseif m > 0 && flag == 0 #change to comport with function header
         expr = quote
             for $sj = 1:(L[$j]-$m)
                 $(loop_periodic(s, hop, ex, j - 1))
