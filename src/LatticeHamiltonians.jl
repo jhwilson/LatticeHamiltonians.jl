@@ -173,9 +173,9 @@ macro lattice_hamiltonian(input)
             # seperate out the onsite hopping matrix
             # as it requires special handling
             if isonsite(ex)
-              exprV = ex
+                exprV = ex
             else
-              push!(hops, ex)  # Add hopping expression to the vector
+                push!(hops, ex)  # Add hopping expression to the vector
             end
         elseif ex.head == :(=)
             param_key = ex.args[1]
@@ -211,7 +211,7 @@ macro lattice_hamiltonian(input)
     # Extract the onsite potential and hopping
     V, onsite = extract_potential(exprV, dim, d, params)
     if onsite !== nothing
-      T[onsite.first] = onsite.second
+        T[onsite.first] = onsite.second
     end
 
     # Real space structure
@@ -267,39 +267,39 @@ extract_potential(:([Δ t; t -Δ], 1, 2, Dict{Symbol,ComplexF64}(:Δ => 1.0))
 ```
 """
 function extract_potential(exprV::Expr, dim::Int, d::Int, params::Dict{Symbol,ComplexF64})
-  # on site hoppings
-  orows = Int[]
-  ocols = Int[]
-  ovalues = LiteralOrSymbolic[]
+    # on site hoppings
+    orows = Int[]
+    ocols = Int[]
+    ovalues = LiteralOrSymbolic[]
 
 
-  # on site potential
-  V = Vector{LiteralOrSymbolic}(undef, d)
-  fill!(V, zero(ComplexF64))
+    # on site potential
+    V = Vector{LiteralOrSymbolic}(undef, d)
+    fill!(V, zero(ComplexF64))
 
-  # implicitly set V to zero if not provided
-  if exprV == :()
-    return V, nothing
-  end
-
-  pair = parse_hopping(exprV, params)
-  (rows, cols, values) = pair[2]
-
-
-  # seperate the diagonal and off-diagonal elements
-  for (r, c, v) in zip(rows, cols, values)
-    if r == c
-      V[r] = v
-    else
-      push!(orows, r)
-      push!(ocols, c)
-      push!(ovalues, v)
+    # implicitly set V to zero if not provided
+    if exprV == :()
+        return V, nothing
     end
-  end
 
-  hop = isempty(orows) ? nothing : zeros(Int, dim) => (orows, ocols, ovalues)
+    pair = parse_hopping(exprV, params)
+    (rows, cols, values) = pair[2]
 
-  V, hop
+
+    # seperate the diagonal and off-diagonal elements
+    for (r, c, v) in zip(rows, cols, values)
+        if r == c
+            V[r] = v
+        else
+            push!(orows, r)
+            push!(ocols, c)
+            push!(ovalues, v)
+        end
+    end
+
+    hop = isempty(orows) ? nothing : zeros(Int, dim) => (orows, ocols, ovalues)
+
+    V, hop
 end
 
 """
@@ -361,7 +361,7 @@ function build_sparse(H::LatticeHamiltonian, V, T)
                 d = H.d
                 L = H.L
                 dim = length(L)
-                $(ham_expr(V, T, dim; sparse = true))
+                $(ham_expr(V, T, dim; sparse=true))
                 idx -= 1
                 return dropzeros!(
                     sparse(ivals[1:idx], jvals[1:idx], hvals[1:idx], size(H)...),
@@ -382,14 +382,14 @@ Attempts to convert terms to a canonical form:
 """
 function symbols_to_lookups(expr, params::Dict{Symbol,ComplexF64})
     MacroTools.postwalk(function (x)
-        if isexpr(x, Number)
-            ComplexF64(x)
-        elseif haskey(params, x)
-            :(params[$(QuoteNode(x))])
-        else
-            x
-        end
-    end, expr)
+            if isexpr(x, Number)
+                ComplexF64(x)
+            elseif haskey(params, x)
+                :(params[$(QuoteNode(x))])
+            else
+                x
+            end
+        end, expr)
 end
 
 
@@ -418,7 +418,7 @@ function nonzero_elements(matrix::Expr)
             end
         end
     end
-    return (rows = rows, cols = cols, vals = vals)
+    return (rows=rows, cols=cols, vals=vals)
 end
 
 """
@@ -429,20 +429,20 @@ Generic iteration over elements of a matrix or vector expression.
 where `ri` and `ci` are the row and column indices of the element,
 and `elem` is the value.
 """
-function foreach_element(f :: Function, expr::Expr)
+function foreach_element(f::Function, expr::Expr)
     if isexpr(expr, :vcat)
-    for (ri, row) in enumerate(expr.args)
-        for (ci, elem) in enumerate(row.args)
-            f(ri, ci, elem)
+        for (ri, row) in enumerate(expr.args)
+            for (ci, elem) in enumerate(row.args)
+                f(ri, ci, elem)
+            end
         end
-    end
-  elseif isexpr(expr, :vect)
-    for (i, elem) in enumerate(expr.args)
+    elseif isexpr(expr, :vect)
+        for (i, elem) in enumerate(expr.args)
             f(i, i, elem)
+        end
+    else
+        throw(ArgumentError("Expected a matrix or vector"))
     end
-  else
-    throw(ArgumentError("Expected a matrix or vector"))
-  end
 end
 
 function fnzi(matrix)
