@@ -135,7 +135,7 @@ function loop_periodic(s, hop, ex, j; BCs="Periodic")
             if length(BCs) != j
                 if length(BCs) > j
                     if length(BCs) == j + 1 #truncate BCs to current j, guaranteed to be BoundsError if over
-                        deleteat!(BCs, j + 1)
+                        BCs = deleteat!(BCs, j + 1)
                     else
                         error("BCs if mixed or not should be array with length matching no. of dims")
                     end
