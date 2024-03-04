@@ -6,7 +6,8 @@ in an efficient way by using metaprogramming features of Julia.
 It takes the on-site potentials `Vs` and generates a corresponding `Expr` block,
 which, when evaluated, would perform the operations of the diagonal part of the Hamiltonian.
 """
-function make_diag_expr(Vs; s=:n, sparse=false)
+
+function make_diag_expr(Vs; s = :n, sparse = false)
     expr_array = Vector{Expr}(undef, length(Vs) + 1)
     for i in eachindex(Vs)
         V = Vs[i]
@@ -44,7 +45,9 @@ end
 Constructs the off-diagonal part of the Hamiltonian matrix
 by generating an `Expr` block, which performs the operations of the off-diagonal part of the Hamiltonian.
 """
-function make_hop_expr(is, js, Vs, dim; s=:n, sparse=false)
+
+
+function make_hop_expr(is, js, Vs, dim; s = :n, sparse = false)
     expr_array = Vector{Expr}(undef, length(is) + 1)
     for idx in eachindex(is)
         i = is[idx]
@@ -102,11 +105,14 @@ end
 """
     loop_periodic(hops, ex; s = :n)
     loop_periodic_diag(dim, d, ex; s = :n)
+
     loop_periodic(s, hop, ex, j, BCs = "T, T, F"), ex. array for periodic in two directions and open in one
+
 
 Generate an `Expr` block for loops iterating over lattice sites
 in a periodic system.
 """
+
 function loop_periodic(hops, ex; s=:n)
     quote
         ind1 = 0
@@ -193,6 +199,7 @@ function loop_periodic(s, hop, ex, j; BCs="Periodic")
         expr = quote
             for $sj = 1:L[$j]
                 $(loop_periodic(s, hop, ex, j - 1; BCs=BCs))
+
             end
         end
     end
@@ -204,6 +211,7 @@ end
 Combine the expressions for the diagonal and hopping terms to generate
 a block of expressions that applies the full Hamiltonian.
 """
+
 function ham_expr(V, T, dim; sparse=false)
     expr_Lprods = Expr(
         :block,
@@ -217,6 +225,7 @@ function ham_expr(V, T, dim; sparse=false)
     expr_hops = Vector{Expr}(undef, length(T))
     idx = 1
     for (hops, (is, js, hs)) in T
+
         expr_T = make_hop_expr(is, js, hs, dim; sparse=sparse)
         expr_hops[idx] = loop_periodic(hops, expr_T)
         idx += 1
