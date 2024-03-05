@@ -117,14 +117,14 @@ function loop_periodic(hops, ex; s=:n)
     quote
         ind1 = 0
         ind2 = d * $(site_expr(hops))
-        $(loop_periodic(s, hops, ex, length(hops); "Periodic"))
+        $(loop_periodic(s, hops, ex, length(hops); BCs="Periodic"))
     end
 end
 
 function loop_periodic_diag(dim, d, ex; s=:n)
     quote
         ind1 = 0
-        $(loop_periodic(s, zeros(Int, dim), ex, dim; "Periodic"))
+        $(loop_periodic(s, zeros(Int, dim), ex, dim; BCs="Periodic"))
     end
 end
 
