@@ -102,7 +102,8 @@ end
 """
     loop_periodic(hops, ex; s = :n)
     loop_periodic_diag(dim, d, ex; s = :n)
-    loop_periodic(s, hop, ex, j, BCs = "T, T, F"), ex. array for periodic in two directions and open in one
+
+    loop_periodic(s, hop, ex, j, BCs = "true/1, true/1, false/0"), ex. array for periodic in two directions and open in one
 
 Generate an `Expr` block for loops iterating over lattice sites
 in a periodic system.
@@ -111,14 +112,14 @@ function loop_periodic(hops, ex; s=:n)
     quote
         ind1 = 0
         ind2 = d * $(site_expr(hops))
-        $(loop_periodic(s, hops, ex, length(hops), "Periodic"))
+        $(loop_periodic(s, hops, ex, length(hops); "Periodic"))
     end
 end
 
 function loop_periodic_diag(dim, d, ex; s=:n)
     quote
         ind1 = 0
-        $(loop_periodic(s, zeros(Int, dim), ex, dim, "Periodic"))
+        $(loop_periodic(s, zeros(Int, dim), ex, dim; "Periodic"))
     end
 end
 
