@@ -168,8 +168,8 @@ function loop_periodic(s, hop, ex, j; BCs="Periodic")
             for $sj = 1:$(-m)
                 $(loop_periodic(s, hop, ex, j - 1; BCs=BCs))
             end
-            ind1 += m * $Lprodj - 1
-            ind2 += m * $Lprodj - 1
+            ind1 += $m * $Lprodj - 1
+            ind2 += $m * $Lprodj - 1
         end
     elseif m > 0 && !BCs[j] #change to comport with function header
         expr = quote
@@ -184,11 +184,11 @@ function loop_periodic(s, hop, ex, j; BCs="Periodic")
         end
     elseif m > 0 && BCs[j]
         expr = quote
-            ind1 += m * $Lprodj - 1
+            ind1 += $m * $Lprodj - 1
             for $sj = (L[$j]-$(m - 1)):L[$j]
                 $(loop_periodic(s, hop, ex, j - 1; BCs=BCs))
             end
-            ind2 += m * $Lprodj - 1
+            ind2 += $m * $Lprodj - 1
         end
     else
         expr = quote
