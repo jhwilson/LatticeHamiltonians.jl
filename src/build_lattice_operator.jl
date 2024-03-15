@@ -108,46 +108,25 @@ end
 Generate an `Expr` block for loops iterating over lattice sites
 in a periodic system.
 """
-function loop_periodic(hops, ex; s=:n)
+
+function loop_periodic(hops, ex, BCs; s=:n)
     quote
         ind1 = 0
         ind2 = d * $(site_expr(hops))
-        $(loop_periodic(s, hops, ex, length(hops); BCs="Periodic"))
+        $(loop_periodic(s, hops, ex, length(hops), BCs))
     end
 end
 
 function loop_periodic_diag(dim, d, ex; s=:n)
     quote
         ind1 = 0
-        $(loop_periodic(s, zeros(Int, dim), ex, dim; BCs="Periodic"))
+        $(loop_periodic(s, zeros(Int, dim), ex, dim, ones(Bool, dim)))
     end
 end
 
-function loop_periodic(s, hop, ex, j; BCs="Periodic")
+function loop_periodic(s, hop, ex, j, BCs)
     if j == 0
         return ex
-    end
-    if BCs == "Periodic"
-        BCs = ones(Bool, j)
-    elseif BCs == "Open"
-        BCs = zeros(Bool, j)
-    else
-        if eltype(BCs) <: Bool
-            if length(BCs) != j
-                if length(BCs) > j
-                    if length(BCs) == j + 1 #truncate BCs to current j, guaranteed to be BoundsError if over
-                        BCs = deleteat!(deepcopy(BCs), j + 1)
-                    else
-                        error("BCs if mixed or not should be array with length matching no. of dims")
-                    end
-                elseif length(BCs) < j
-                    error("BCs if mixed or not should be array with length matching no. of dims")
-                end
-            end
-        else
-            error("BCs should be Bools")
-        end
-
     end
     m::Int = hop[j]
     sj = Symbol("$(s)$j")
@@ -155,18 +134,18 @@ function loop_periodic(s, hop, ex, j; BCs="Periodic")
     if m < 0 && !BCs[j]
         expr = quote
             for $sj = 1:$(-m)
-                $(loop_periodic(s, hop, ex, j - 1; BCs=BCs))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind2 -= $Lprodj
             for $sj = $(-m + 1):L[$j]
-                $(loop_periodic(s, hop, ex, j - 1; BCs=BCs))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind2 += $Lprodj
         end
     elseif m < 0 && BCs[j] #change to comport with function header
         expr = quote
             for $sj = 1:$(-m)
-                $(loop_periodic(s, hop, ex, j - 1; BCs=BCs))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind1 += $m * $Lprodj - 1
             ind2 += $m * $Lprodj - 1
@@ -174,11 +153,11 @@ function loop_periodic(s, hop, ex, j; BCs="Periodic")
     elseif m > 0 && !BCs[j] #change to comport with function header
         expr = quote
             for $sj = 1:(L[$j]-$m)
-                $(loop_periodic(s, hop, ex, j - 1; BCs=BCs))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind2 -= $Lprodj
             for $sj = (L[$j]-$(m - 1)):L[$j]
-                $(loop_periodic(s, hop, ex, j - 1; BCs=BCs))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind2 += $Lprodj
         end
@@ -186,26 +165,27 @@ function loop_periodic(s, hop, ex, j; BCs="Periodic")
         expr = quote
             ind1 += $m * $Lprodj - 1
             for $sj = (L[$j]-$(m - 1)):L[$j]
-                $(loop_periodic(s, hop, ex, j - 1; BCs=BCs))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
             ind2 += $m * $Lprodj - 1
         end
     else
         expr = quote
             for $sj = 1:L[$j]
-                $(loop_periodic(s, hop, ex, j - 1; BCs=BCs))
+                $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
         end
     end
 end
 
 """
-    ham_expr(V, T, dim)
+    ham_expr(V, T, dim; sparse = sparse, BCs = BCs)
 
 Combine the expressions for the diagonal and hopping terms to generate
 a block of expressions that applies the full Hamiltonian.
 """
-function ham_expr(V, T, dim; sparse=false)
+
+function ham_expr(V, T, dim, BCs; sparse=false)
     expr_Lprods = Expr(
         :block,
         [
@@ -219,21 +199,31 @@ function ham_expr(V, T, dim; sparse=false)
     idx = 1
     for (hops, (is, js, hs)) in T
         expr_T = make_hop_expr(is, js, hs, dim; sparse=sparse)
-        expr_hops[idx] = loop_periodic(hops, expr_T)
+        expr_hops[idx] = loop_periodic(hops, expr_T, BCs)
         idx += 1
     end
     return Expr(:block, expr_Lprods, expr_diag, expr_hops...)
 end
 
 """
-    make_apply(params, V, T, dim)
+    make_apply(params, V, T, dim, BCs)
 
 Generate an `Expr` that defines a function to apply the Hamiltonian
 given parameters for the potential and hopping terms (V and T).
 """
-function make_apply(params, V, T, dim)
+function make_apply(params, V, T, dim; BCs = "Periodic")
     # ps = [:($k::typeof($v)) for (k, v) in params]
     # println(ps)
+
+    if BCs == "Periodic"
+        BCs = ones(Bool, dim)
+    elseif BCs == "Open"
+        BCs = zeros(Bool, dim)
+    end
+
+    @assert eltype(BCs) <: Integer "BCs must be labeled with Booleans"
+    @assert length(BCs) == dim "Number of boundary conditions (BCs) must be the dimension of the space."
+
     return quote
         function (
             ψout::AbstractArray,
@@ -243,7 +233,7 @@ function make_apply(params, V, T, dim)
             L::MVector{$dim,Int64},
             params::Dict{Symbol,ComplexF64},
         )
-            $(ham_expr(V, T, dim))
+            $(ham_expr(V, T, dim, BCs))
         end
     end
 end
