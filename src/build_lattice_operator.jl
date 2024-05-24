@@ -6,7 +6,8 @@ in an efficient way by using metaprogramming features of Julia.
 It takes the on-site potentials `Vs` and generates a corresponding `Expr` block,
 which, when evaluated, would perform the operations of the diagonal part of the Hamiltonian.
 """
-function make_diag_expr(Vs; s=:n, sparse=false)
+
+function make_diag_expr(Vs; s = :n, sparse = false)
     expr_array = Vector{Expr}(undef, length(Vs) + 1)
     for i in eachindex(Vs)
         V = Vs[i]
@@ -44,7 +45,9 @@ end
 Constructs the off-diagonal part of the Hamiltonian matrix
 by generating an `Expr` block, which performs the operations of the off-diagonal part of the Hamiltonian.
 """
-function make_hop_expr(is, js, Vs, dim; s=:n, sparse=false)
+
+
+function make_hop_expr(is, js, Vs, dim; s = :n, sparse = false)
     expr_array = Vector{Expr}(undef, length(is) + 1)
     for idx in eachindex(is)
         i = is[idx]
@@ -105,6 +108,7 @@ end
 
     loop_periodic(s, hop, ex, j, BCs = "true/1, true/1, false/0"), ex. array for periodic in two directions and open in one
 
+
 Generate an `Expr` block for loops iterating over lattice sites
 in a periodic system.
 """
@@ -128,9 +132,32 @@ function loop_periodic(s, hop, ex, j, BCs)
     if j == 0
         return ex
     end
+    if BCs == "Periodic"
+        BCs = ones(Bool, j)
+    elseif BCs == "Open"
+        BCs = zeros(Bool, j)
+    else
+        if eltype(BCs) <: Bool
+            if length(BCs) != j
+                if length(BCs) > j
+                    if length(BCs) == j + 1 #truncate BCs to current j, guaranteed to be BoundsError if over
+                        BCs = deleteat!(deepcopy(BCs), j + 1)
+                    else
+                        error("BCs if mixed or not should be array with length matching no. of dims")
+                    end
+                elseif length(BCs) < j
+                    error("BCs if mixed or not should be array with length matching no. of dims")
+                end
+            end
+        else
+            error("BCs should be Bools")
+        end
+
+    end
     m::Int = hop[j]
     sj = Symbol("$(s)$j")
     Lprodj = Symbol("Lprod$j")
+    if m < 0 && !BCs[j]
     if m < 0 && !BCs[j]
         expr = quote
             for $sj = 1:$(-m)
@@ -193,6 +220,7 @@ function ham_expr(V, T, dim, BCs; sparse=false)
             [:($(Symbol("Lprod$i")) = $(Symbol("Lprod$(i-1)")) * L[$i]) for i = 2:dim]
         ]...,
     )
+    expr_V = make_diag_expr(V; sparse=sparse)
     expr_V = make_diag_expr(V; sparse=sparse)
     expr_diag = loop_periodic_diag(dim, length(V), expr_V)
     expr_hops = Vector{Expr}(undef, length(T))
