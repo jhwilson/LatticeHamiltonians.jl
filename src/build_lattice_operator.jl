@@ -5,6 +5,9 @@ Constructs the diagonal part of the Hamiltonian matrix
 in an efficient way by using metaprogramming features of Julia.
 It takes the on-site potentials `Vs` and generates a corresponding `Expr` block,
 which, when evaluated, would perform the operations of the diagonal part of the Hamiltonian.
+
+If `sparse` is set to `true`, the function generates an `Expr` block that
+constructs the sparse matrix representation of the diagonal part of the Hamiltonian.
 """
 function make_diag_expr(Vs; s = :n, sparse = false)
     expr_array = Vector{Expr}(undef, length(Vs) + 1)
@@ -43,6 +46,9 @@ end
 
 Constructs the off-diagonal part of the Hamiltonian matrix
 by generating an `Expr` block, which performs the operations of the off-diagonal part of the Hamiltonian.
+
+If `sparse` is set to `true`, the function generates an `Expr` block that
+constructs the sparse matrix representation of the off-diagonal part of the Hamiltonian.
 """
 function make_hop_expr(is, js, Vs, dim; s = :n, sparse = false)
     expr_array = Vector{Expr}(undef, length(is) + 1)
@@ -165,8 +171,29 @@ end
 
 Combine the expressions for the diagonal and hopping terms to generate
 a block of expressions that applies the full Hamiltonian.
+
+The behavior of the function can be controlled by the `sparse` keyword argument:
+
+  - when sparse is `false` (default), the function explicitly performs a matrix-vector multiplication
+    on a vector ψin (which is assumed to be defined in the enclosing scope) and stores the results in ψout.
+
+  - when sparse is `true`, the function generates a sparse matrix representation of the Hamiltonian
+    which can be used to instantiate a sparse matrix.
+
+When implementing matrix-vector multiplication directly, the incoming and outgoing vectors are flattened into 1D arrays.
+This effectively corresponds to a Kroneker product of the lattice dimensions.
+Because Julia uses column-major ordering, the indices of the multi-dimensional array are ordered fastest to slowest changing: [o, i_1, i_2, ..., i_n] where o is the oribital index and i_1, i_2, ..., i_n are the lattice indices in dimensions 1, 2, ..., n.
 """
 function ham_expr(V, T, dim; sparse = false)
+    # since we are flattening the multi-dimensional arrays into 1D arrays,
+    # we need to keep track of the stride of the lattice dimensions
+    # for each lattice dimension
+
+    # the orbital index changes the fastest
+    # then the lattice indices
+    # The variables Lprod1, Lprod2, ..., Lproddim store the stride of the lattice dimensions
+    # so that increasing the index by Lprod$(i-1) corresponds to moving to the next lattice site in the $i-th dimension
+    # Lprod$i is the total span traversed by the $i-th dimension when holding all other indices fixed.
     expr_Lprods = Expr(
         :block,
         [
@@ -174,8 +201,11 @@ function ham_expr(V, T, dim; sparse = false)
             [:($(Symbol("Lprod$i")) = $(Symbol("Lprod$(i-1)")) * L[$i]) for i = 2:dim]
         ]...,
     )
+    # evaluate the diagonal elements of the Hamiltonian
     expr_V = make_diag_expr(V; sparse = sparse)
     expr_diag = loop_periodic_diag(dim, length(V), expr_V)
+
+    # evaluate the off-diagonal elements
     expr_hops = Vector{Expr}(undef, length(T))
     idx = 1
     for (hops, (is, js, hs)) in T
@@ -183,6 +213,7 @@ function ham_expr(V, T, dim; sparse = false)
         expr_hops[idx] = loop_periodic(hops, expr_T)
         idx += 1
     end
+
     return Expr(:block, expr_Lprods, expr_diag, expr_hops...)
 end
 
@@ -204,6 +235,10 @@ function make_apply(params, V, T, dim)
             L::MVector{$dim,Int64},
             params::Dict{Symbol,ComplexF64},
         )
+            # The arguments of the function are used implicitly
+            # in the generated expressions
+            #
+            # see make_diag_expr
             $(ham_expr(V, T, dim))
         end
     end
