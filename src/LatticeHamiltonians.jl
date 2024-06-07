@@ -3,9 +3,11 @@ Functions and structures for constructing and applying Hamiltonians on lattice s
 """
 module LatticeHamiltonians
 
-using StaticArrays, LinearAlgebra, SparseArrays
-using MacroTools
-import SparseArrays: sparse
+import StaticArrays: SVector, SMatrix, MVector
+import LinearAlgebra: I
+import MacroTools
+import MacroTools: isexpr
+import SparseArrays: sparse, dropzeros!
 import Base: *, size, length, eltype, adjoint
 
 export LatticeHamiltonian, mul!, *, sparse, size, length, eltype, adjoint
