@@ -243,3 +243,27 @@ function make_apply(params, V, T, dim)
         end
     end
 end
+
+function build_sparse(H::LatticeHamiltonian, V, T)
+    nz = bound_nonzero(prod(H.L), H.d, T)
+    dim = length(H.L)
+    eval(
+        quote
+            function sparse(H::$(typeof(H)))
+                ivals = Array{Int64}(undef, $nz)
+                jvals = Array{Int64}(undef, $nz)
+                hvals = Array{ComplexF64}(undef, $nz)
+                idx = 1
+                params = H.params
+                d = H.d
+                L = H.L
+                dim = length(L)
+                $(ham_expr(V, T, dim; sparse = true))
+                idx -= 1
+                return dropzeros!(
+                    sparse(ivals[1:idx], jvals[1:idx], hvals[1:idx], size(H)...),
+                )
+            end
+        end,
+    )
+end
