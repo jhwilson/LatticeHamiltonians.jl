@@ -9,40 +9,30 @@ which, when evaluated, would perform the operations of the diagonal part of the 
 If `sparse` is set to `true`, the function generates an `Expr` block that
 constructs the sparse matrix representation of the diagonal part of the Hamiltonian.
 """
-function make_diag_expr(Vs; s = :n, sparse = false)
-    expr_array = Vector{Expr}(undef, length(Vs) + 1)
-    for i in eachindex(Vs)
-        V = Vs[i]
-        if sparse
-            expr_array[i] = quote
-                ivals[idx] = ind1 + $i
-                jvals[idx] = ind1 + $i
-                hvals[idx] = $V
-                idx += 1
-            end
-        else
-            if typeof(V) <: ComplexF64
-                expr_array[i] = if (V != zero(ComplexF64))
-                    :(ψout[ind1+$i] = $V * ψin[ind1+$i])
-                else
-                    :(ψout[ind1+$i] = zero(ComplexF64))
-                end
-            elseif typeof(V) <: Symbol
-                expr_array[i] = :(ψout[ind1+$i] = $V * ψin[ind1+$i])
-            elseif typeof(V) <: Function
-                ss = [Symbol("$(s)$m") for m = 1:length(Vs)]
-                expr_array[i] = :(ψout[ind1+$i] = $V($(ss...)) * ψin[ind1+$i])
-            elseif typeof(V) <: Expr
-                expr_array[i] = :(ψout[ind1+$i] = $(V) * ψin[ind1+$i])
-            end
-        end
+function make_diag_expr(Vs; site_var_prefix = :n, sparse = false)
+    is = eachindex(Vs)
+    dim = length(Vs)
+    expr_array = if sparse
+        @. sparse_diag_expr(Vs, is)
+    else
+        @. diag_expr(Vs, is; site = site_vector_var(site_var_prefix, dim))
     end
-    expr_array[end] = :(ind1 += d)
+
+    push!(expr_array, :(i_out += d))
     return Expr(:block, expr_array...)
 end
 
+function diag_expr(V, i::Int; site)
+    m_el = matrix_element(V; site = site)
+    if m_el == :()
+        :(ψout[i_out+$i] = zero(ComplexF64))
+    else
+        :(ψout[i_out+$i] = $m_el * ψin[i_out+$i])
+    end
+end
+
 """
-    make_hop_expr(is, js, Vs, dim; s = :n)
+    make_hop_expr(is, js, Vs, dim; s = :n, sparse=false)
 
 Constructs the off-diagonal part of the Hamiltonian matrix
 by generating an `Expr` block, which performs the operations of the off-diagonal part of the Hamiltonian.
@@ -50,41 +40,43 @@ by generating an `Expr` block, which performs the operations of the off-diagonal
 If `sparse` is set to `true`, the function generates an `Expr` block that
 constructs the sparse matrix representation of the off-diagonal part of the Hamiltonian.
 """
-function make_hop_expr(is, js, Vs, dim; s = :n, sparse = false)
-    expr_array = Vector{Expr}(undef, length(is) + 1)
-    for idx in eachindex(is)
-        i = is[idx]
-        j = js[idx]
-        V = Vs[idx]
-        if sparse
-            expr_array[idx] = quote
-                ivals[idx] = ind2 + $i
-                jvals[idx] = ind1 + $j
-                hvals[idx] = $V
-                idx += 1
-            end
-        else
-            if typeof(V) <: ComplexF64
-                expr_array[idx] = if (V != zero(ComplexF64))
-                    :(ψout[ind1+$j] += $V * ψin[ind2+$i])
-                else
-                    :(zero(ComplexF64))
-                end
-            elseif typeof(V) <: Symbol
-                expr_array[idx] = :(ψout[ind1+$j] += $V * ψin[ind2+$i])
-            elseif typeof(V) <: Function
-                ss = [site_loop_var(s, m) for m = 1:dim]
-                expr_array[idx] = :(ψout[ind1+$j] += $V($(ss...)) * ψin[ind2+$i])
-            elseif typeof(V) <: Expr
-                expr_array[idx] = :(ψout[ind1+$j] += $(V) * ψin[ind2+$i])
-            end
-        end
+function make_hop_expr(is, js, Vs, dim; site_var_prefix = :n, sparse = false)
+    expr_array = if sparse
+        @. sparse_hop_expr(Vs, is, js)
+    else
+        @. hop_expr(Vs, is, js; site = site_vector_var(site_var_prefix, dim))
     end
-    expr_array[end] = :(ind1 += d; ind2 += d)
+
+    push!(expr_array, :(i_out += d; i_in += d))
     return Expr(:block, expr_array...)
 end
 
+sparse_diag_expr(V, i::Int) = sparse_hop_expr(V, :(i_out + $i), :(i_out + $i))
+sparse_hop_expr(V, i::Int, j::Int) = sparse_hop_expr(V, :(i_in + $i), :(i_out + $j))
+function sparse_hop_expr(V, in_idx::Expr, out_idx::Expr)
+    quote
+        ivals[idx] = $in_idx
+        jvals[idx] = $out_idx
+        hvals[idx] = $V
+        idx += 1
+    end
+end
+
+function hop_expr(V, i::Int, j::Int; site)
+    mel = matrix_element(V; site = site)
+    if mel == :()
+        mel
+    else
+        :(ψout[i_out+$j] += $mel * ψin[i_in+$i])
+    end
+end
+
+matrix_element(V::Function; site) = :($(V$(site...)))
+matrix_element(V::ComplexF64; site) = V == zero(ComplexF64) ? :() : V
+matrix_element(V; site) = V
+
 site_loop_var(base, j) = Symbol("$(base)$j")
+site_vector_var(base, dim) = [site_loop_var(base, j) for j = 1:dim]
 
 dim_span_var(j) = Symbol("Lprod$j")
 
@@ -98,15 +90,13 @@ site_expr(hops) = site_expr(hops, 1)
 
 function site_expr(hops, j)
     if j == length(hops)
-        t = hops[j] ≥ 0 ? :($(hops[j])) : :(L[$j] - $(-hops[j]))
-        return t
+        return hops[j] ≥ 0 ? :($(hops[j])) : :(L[$j] - $(-hops[j]))
     end
-    t = if hops[j] ≥ 0
+    if hops[j] ≥ 0
         :($(hops[j]) + $(site_expr(hops, j + 1)) * L[$j])
     else
         :(L[$j] * (1 + $(site_expr(hops, j + 1))) - $(-hops[j]))
     end
-    return t
 end
 
 """
@@ -122,15 +112,15 @@ from the slowest to the fastest changing lattice dimensions.
 """
 function loop_periodic(hops, ex; s = :n)
     quote
-        ind1 = 0
-        ind2 = d * $(site_expr(hops))
+        i_out = 0
+        i_in = d * $(site_expr(hops))
         $(loop_periodic(s, hops, ex, length(hops)))
     end
 end
 
 function loop_periodic_diag(dim, d, ex; s = :n)
     quote
-        ind1 = 0
+        i_out = 0
         $(loop_periodic(s, zeros(Int, dim), ex, dim))
     end
 end
@@ -155,22 +145,22 @@ function loop_periodic(s, hop, ex, axis)
             for $loop_var = 1:$(-hop_range)
                 $(loop_periodic(s, hop, ex, axis - 1))
             end
-            ind2 -= $dim_span
+            i_in -= $dim_span
             for $loop_var = $(-hop_range + 1):L[$axis]
                 $(loop_periodic(s, hop, ex, axis - 1))
             end
-            ind2 += $dim_span
+            i_in += $dim_span
         end
     elseif hop_range > 0
         expr = quote
             for $loop_var = 1:(L[$axis]-$hop_range)
                 $(loop_periodic(s, hop, ex, axis - 1))
             end
-            ind2 -= $dim_span
+            i_in -= $dim_span
             for $loop_var = (L[$axis]-$(hop_range - 1)):L[$axis]
                 $(loop_periodic(s, hop, ex, axis - 1))
             end
-            ind2 += $dim_span
+            i_in += $dim_span
         end
     else
         expr = quote
@@ -182,7 +172,7 @@ function loop_periodic(s, hop, ex, axis)
 end
 
 """
-    ham_expr(V, T, dim)
+    ham_expr(V, T, dim; sparse=false)
 
 Combine the expressions for the diagonal and hopping terms to generate
 a block of expressions that applies the full Hamiltonian.
