@@ -1,3 +1,41 @@
+# VARIABLE NAMES
+# ----
+
+"""
+    site_loop_var(base, j)
+
+Generate a symbol for the loop variable in the generated code.
+`base` is the prefix of the variable name and `j` indexes the lattice dimension.
+For example, in a 2D lattice, we might generate `n1`, `n2` for the loop variables.
+
+See also: `site_vector_var`
+"""
+site_loop_var(base, j) = Symbol("$(base)$j")
+
+"""
+    site_vector_var(base, dim)
+
+Generate a vector of symbols for the lattice site in the generated code.
+`base` is the prefix of the variable name, which should be the same as is used in
+`loop_periodic`, and `dim` is the lattice dimension.
+
+For example, for a 2D lattice, we might generate `[n1, n2]` for the lattice site.
+"""
+site_vector_var(base, dim) = [site_loop_var(base, j) for j = 1:dim]
+
+"""
+    dim_span_var(j)
+
+Generate a symbol for the span of the lattice dimension in the generated code.
+This describes how much the linear index changes when traversing all sites in this dimension.
+For example, in a 2D lattice, we might generate `Lprod1`, `Lprod2` for the span of the lattice dimensions.
+Suppose that there are `d=3` orbitals on-site, and the lattice dimensions are L1=2 and L2=3.
+Then the linear index changes by `d * L1` when traversing all sites in the first dimension,
+and by `d * L1 * L2` when traversing all sites in the second dimension, so the spans are `6` and `18` respectively.
+"""
+dim_span_var(j) = Symbol("Lprod$j")
+# ----
+
 """
     make_diag_expr(Vs; s = :n)
 
@@ -74,11 +112,6 @@ end
 matrix_element(V::Function; site) = :($(V$(site...)))
 matrix_element(V::ComplexF64; site) = V == zero(ComplexF64) ? :() : V
 matrix_element(V; site) = V
-
-site_loop_var(base, j) = Symbol("$(base)$j")
-site_vector_var(base, dim) = [site_loop_var(base, j) for j = 1:dim]
-
-dim_span_var(j) = Symbol("Lprod$j")
 
 """
     site_expr(hops[, j])
