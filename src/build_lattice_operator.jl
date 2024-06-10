@@ -231,13 +231,12 @@ end
 Generate an `Expr` that defines a function to apply the Hamiltonian
 given parameters for the potential and hopping terms (V and T).
 """
-function make_apply(params, V, T, dim)
+function make_apply(V, T, dim)
     return quote
         function (
             ψout::AbstractArray,
             ψin::AbstractArray,
             d::Int,
-            dim::Int,
             L::MVector{$dim,Int64},
             params::Dict{Symbol,ComplexF64},
         )
@@ -263,7 +262,6 @@ function build_sparse(H::LatticeHamiltonian, V, T)
                 params = H.params
                 d = H.d
                 L = H.L
-                dim = length(L)
                 $(ham_expr(V, T, dim; sparse = true))
                 idx -= 1
                 return dropzeros!(

@@ -73,7 +73,7 @@ macro lattice_hamiltonian(input)
     B = SMatrix{parsed.dim,parsed.dim,Float64}(I * 2 * pi) #TODO
     r = fill(SVector{parsed.dim}(zeros(Float64, parsed.dim)), parsed.d) #TODO
 
-    apply = eval(make_apply(parsed.params, parsed.V, parsed.T, parsed.dim))
+    apply = eval(make_apply(parsed.V, parsed.T, parsed.dim))
     H = LatticeHamiltonian(A, B, parsed.d, parsed.L, parsed.params, r, apply)
 
     build_sparse(H, parsed.V, parsed.T)
@@ -107,7 +107,7 @@ end
 Efficiently perform the matrix multiplaction `H*ψin`, writing the result to `ψout`.
 """
 function mul!(ψout::AbstractVector, H::LatticeHamiltonian, ψin::AbstractVector)
-    H.apply!(ψout, ψin, H.d, length(H.L), H.L, H.params)
+    H.apply!(ψout, ψin, H.d, H.L, H.params)
 end
 
 """
@@ -123,10 +123,9 @@ function *(H::LatticeHamiltonian, ψ::AbstractVector)
 end
 
 function sitenumber(r, H::LatticeHamiltonian)
-    dim = length(H.L)
-    sitenum = r[dim]
-    for j = 1:(dim-1)
-        sitenum = r[dim-j] + sitenum * H.L[dim-j]
+    sitenum = r[H.dim]
+    for j = 1:(H.dim-1)
+        sitenum = r[H.dim-j] + sitenum * H.L[H.dim-j]
     end
     return 1 + sitenum
 end
