@@ -9,9 +9,8 @@ which, when evaluated, would perform the operations of the diagonal part of the 
 If `sparse` is set to `true`, the function generates an `Expr` block that
 constructs the sparse matrix representation of the diagonal part of the Hamiltonian.
 """
-function make_diag_expr(Vs; site_var_prefix = :n, sparse = false)
+function make_diag_expr(Vs, dim; site_var_prefix = :n, sparse = false)
     is = eachindex(Vs)
-    dim = length(Vs)
     expr_array = if sparse
         @. sparse_diag_expr(Vs, is)
     else
@@ -211,7 +210,7 @@ function ham_expr(V, T, dim; sparse = false)
     # evaluate the diagonal elements of the Hamiltonian
     # NOTE: it is very important that the diagonal code is evaluated first
     # as it is responsible for zeroing out the output vector
-    expr_V = make_diag_expr(V; sparse = sparse)
+    expr_V = make_diag_expr(V, dim; sparse = sparse)
     expr_diag = loop_periodic_diag(dim, length(V), expr_V)
 
     # evaluate the off-diagonal elements
