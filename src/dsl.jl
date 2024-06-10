@@ -12,6 +12,14 @@ A tuple of the form `(i, j, val)` that describes a non-zero element of a `Matrix
 """
 SparseEntry{T} = Tuple{Vector{Int64},Vector{Int64},Vector{T}}
 
+"""
+    LatticeVector{lattice_dim}
+
+A vector of integers that describes a lattice vector in a `lattice_dim` dimensional lattice.
+"""
+LatticeVector{lattice_dim} = SVector{lattice_dim,Int64}
+onsite(lattice_dim) = LatticeVector{lattice_dim}(zeros(Int, lattice_dim))
+
 function parse_lattice_dsl(input)
     exprL = :()
     exprV = :()
@@ -53,26 +61,37 @@ function parse_lattice_dsl(input)
         error("Invalid input. Expected a vector of integers.")
     end
 
-    L = MVector{length(L),Int}(L)
+    lattice_dim = length(L)
+    L = MVector{lattice_dim,Int64}(L)
     if isempty(hops)
         error("Invalid input. Expected at least one hopping expression.")
     end
 
 
     # Hamiltonian matrix elements
-    T = Dict{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
+    T = Dict{LatticeVector{lattice_dim},SparseEntry{LiteralOrSymbolic}}(
         parse_hopping(hop, params) for hop in hops
     )
-    # compute the number of orbitals as the maximum index of the hopping matrix
-    d = maximum([max(maximum(t.second[1]), maximum(t.second[2])) for t in T])
+    d = orbital_dim(T)
 
     # Extract the onsite potential and hopping
-    V, onsite = extract_potential(exprV, dim, d, params)
-    if onsite !== nothing
-      T[onsite.first] = onsite.second
+    V, onsite_hops = extract_potential(exprV, dim, d, params)
+    if onsite_hops !== nothing
+      T[onsite(lattice_dim)] = onsite_hops
     end
 
     (params=params, L=L, V=V, T=T, dim=dim, d=d)
+end
+
+"""
+    orbital_dim(T)
+
+compute the number of orbitals as the maximum index of the orbital hopping matrices
+"""
+function orbital_dim(T)
+    map(values(T)) do (rows, cols, _)
+        max(maximum(rows), maximum(cols))
+    end |> maximum
 end
 
 """
@@ -118,7 +137,6 @@ function extract_potential(exprV::Expr, dim::Int, d::Int, params::Dict{Symbol,Co
   ocols = Int[]
   ovalues = LiteralOrSymbolic[]
 
-
   # on site potential
   V = Vector{LiteralOrSymbolic}(undef, d)
   fill!(V, zero(ComplexF64))
@@ -129,8 +147,7 @@ function extract_potential(exprV::Expr, dim::Int, d::Int, params::Dict{Symbol,Co
   end
 
   pair = parse_hopping(exprV, params)
-  (rows, cols, values) = pair[2]
-
+  (rows, cols, values) = pair.second
 
   # seperate the diagonal and off-diagonal elements
   for (r, c, v) in zip(rows, cols, values)
@@ -143,7 +160,7 @@ function extract_potential(exprV::Expr, dim::Int, d::Int, params::Dict{Symbol,Co
     end
   end
 
-  hop = isempty(orows) ? nothing : zeros(Int, dim) => (orows, ocols, ovalues)
+  hop = isempty(orows) ? nothing : (orows, ocols, ovalues)
 
   V, hop
 end
@@ -160,7 +177,7 @@ and return a pair of the form
     key => (rows, cols, values)
 
 where `key` is a vector of integers that describe the hopping vector,
-and `rows`, `cols`, and `values` are vectors that describe the non-zero elements of the hopping matrix.
+and `rows`, `cols`, and `values` are vectors that describe the non-zero elements of the orbital hopping matrix.
 
 The hopping matrix itself may be a singleton, a matrix literal, or a tuple of vectors `(rows, cols, values)`.
 """

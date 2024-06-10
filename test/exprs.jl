@@ -70,13 +70,7 @@ using LatticeHamiltonians:
             1,
             3,
             Dict{Symbol,ComplexF64}(:z => 3),
-        ) == (
-            LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])],
-            Pair{Vector{Int64},SparseEntry{LiteralOrSymbolic}}(
-                [0],
-                ([1, 3], [2, 1], [:t, :j]),
-            ),
-        )
+        ) == (LiteralOrSymbolic[1.0+0.0im, :ψ, :(params[:z])], ([1, 3], [2, 1], [:t, :j]))
     end
 
     @testset "parse_hopping" begin
