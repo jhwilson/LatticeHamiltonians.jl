@@ -32,7 +32,7 @@ function diag_expr(V, i::Int; site)
 end
 
 """
-    make_hop_expr(is, js, Vs, dim; s = :n, sparse=false)
+    make_hop_expr(is, js, hs, dim; s = :n, sparse=false)
 
 Constructs the off-diagonal part of the Hamiltonian matrix
 by generating an `Expr` block, which performs the operations of the off-diagonal part of the Hamiltonian.
@@ -40,11 +40,11 @@ by generating an `Expr` block, which performs the operations of the off-diagonal
 If `sparse` is set to `true`, the function generates an `Expr` block that
 constructs the sparse matrix representation of the off-diagonal part of the Hamiltonian.
 """
-function make_hop_expr(is, js, Vs, dim; site_var_prefix = :n, sparse = false)
+function make_hop_expr(is, js, hs, dim; site_var_prefix = :n, sparse = false)
     expr_array = if sparse
-        @. sparse_hop_expr(Vs, is, js)
+        @. sparse_hop_expr(hs, is, js)
     else
-        @. hop_expr(Vs, is, js; site = site_vector_var(site_var_prefix, dim))
+        @. hop_expr(hs, is, js; site = site_vector_var(site_var_prefix, dim))
     end
 
     push!(expr_array, :(i_out += d; i_in += d))
