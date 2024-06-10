@@ -208,6 +208,8 @@ function ham_expr(V, T, dim; sparse = false)
         ]...,
     )
     # evaluate the diagonal elements of the Hamiltonian
+    # NOTE: it is very important that the diagonal code is evaluated first
+    # as it is responsible for zeroing out the output vector
     expr_V = make_diag_expr(V; sparse = sparse)
     expr_diag = loop_periodic_diag(dim, length(V), expr_V)
 
