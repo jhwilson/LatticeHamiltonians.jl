@@ -22,6 +22,8 @@ function make_diag_expr(Vs; site_var_prefix = :n, sparse = false)
     return Expr(:block, expr_array...)
 end
 
+sparse_diag_expr(V, i::Int) = sparse_hop_expr(V, :(i_out + $i), :(i_out + $i))
+
 function diag_expr(V, i::Int; site)
     m_el = matrix_element(V; site = site)
     if m_el == :()
@@ -51,7 +53,6 @@ function make_hop_expr(is, js, hs, dim; site_var_prefix = :n, sparse = false)
     return Expr(:block, expr_array...)
 end
 
-sparse_diag_expr(V, i::Int) = sparse_hop_expr(V, :(i_out + $i), :(i_out + $i))
 sparse_hop_expr(V, i::Int, j::Int) = sparse_hop_expr(V, :(i_in + $i), :(i_out + $j))
 function sparse_hop_expr(V, in_idx::Expr, out_idx::Expr)
     quote
@@ -243,7 +244,7 @@ function make_apply(V, T, dim)
             # The arguments of the function are used implicitly
             # in the generated expressions
             #
-            # see make_diag_expr
+            # see e.g., diag_expr, hop_expr
             $(ham_expr(V, T, dim))
         end
     end
