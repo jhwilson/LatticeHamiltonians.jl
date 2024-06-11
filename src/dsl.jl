@@ -243,7 +243,7 @@ based on the provided hoppings `T`, the number of orbitals `d`, and the volume o
 """
 function bound_nonzero(vol, d::Int, T)
     non_zero = d + sum(t -> length(t[2][1]), T)
-    return non_zero * vol
+    non_zero * vol
 end
 
 
@@ -260,6 +260,7 @@ function nonzero_elements(matrix::Expr)
     rows = Int[]
     cols = Int[]
     vals = LiteralOrSymbolic[]
+
     foreach_element(matrix) do ri, ci, elem
         if !(elem isa Number && iszero(elem))
             push!(rows, ri)
@@ -271,7 +272,8 @@ function nonzero_elements(matrix::Expr)
             end
         end
     end
-    return (rows = rows, cols = cols, vals = vals)
+
+   (rows = rows, cols = cols, vals = vals)
 end
 
 """

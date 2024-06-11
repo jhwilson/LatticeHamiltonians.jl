@@ -77,7 +77,7 @@ function make_diag_expr(Vs, dim; sparse = false)
     end
 
     push!(expr_array, :(i_out += d))
-    return Expr(:block, expr_array...)
+    Expr(:block, expr_array...)
 end
 
 sparse_diag_expr(V, i::Int) = sparse_hop_expr(V, :(i_out + $i), :(i_out + $i))
@@ -108,7 +108,7 @@ function make_hop_expr(is, js, hs, dim; sparse = false)
     end
 
     push!(expr_array, :(i_out += d; i_in += d))
-    return Expr(:block, expr_array...)
+    Expr(:block, expr_array...)
 end
 
 sparse_hop_expr(V, i::Int, j::Int) = sparse_hop_expr(V, :(i_in + $i), :(i_out + $j))
@@ -314,7 +314,7 @@ function ham_expr(V, T, dim; sparse = false)
         idx += 1
     end
 
-    return Expr(:block, expr_spans, expr_diag, expr_hops...)
+    Expr(:block, expr_spans, expr_diag, expr_hops...)
 end
 
 """
@@ -324,7 +324,7 @@ Generate an `Expr` that defines a function to apply the Hamiltonian
 given parameters for the potential and hopping terms (V and T).
 """
 function make_apply(V, T, dim)
-    return quote
+    quote
         function (
             ψout::AbstractArray,
             ψin::AbstractArray,

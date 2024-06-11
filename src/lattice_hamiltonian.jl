@@ -87,8 +87,10 @@ end
 
 function sitenumber(r, H::LatticeHamiltonian)
     sitenum = r[H.dim]
+
     for j = 1:(H.dim-1)
         sitenum = r[H.dim-j] + sitenum * H.L[H.dim-j]
     end
-    return 1 + sitenum
+
+    1 + sitenum
 end

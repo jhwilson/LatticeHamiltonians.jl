@@ -5,19 +5,19 @@ import LinearAlgebra: mul!
 # should we go ahead and implement AbstractMatrix?
 function Base.size(H::LatticeHamiltonian)
     l = H.d * prod(H.L)
-    return l, l
+    l, l
 end
 
 function Base.length(H::LatticeHamiltonian)
-    return (H.d * prod(H.L))^2
+    (H.d * prod(H.L))^2
 end
 
 function Base.eltype(::LatticeHamiltonian) #Hardcoded as ComplexF64 for the moment.
-    return ComplexF64
+    ComplexF64
 end
 
 function Base.adjoint(H::LatticeHamiltonian) #Hardcoding that the matrix is Hermitian!!
-    return H
+    H
 end
 
 """
@@ -42,5 +42,5 @@ using the `mul!` function.
 function *(H::LatticeHamiltonian, ψ::AbstractVector)
     v = Array{eltype(ψ)}(undef, length(ψ))
     mul!(v, H, ψ)
-    return v
+    v
 end
