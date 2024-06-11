@@ -1,3 +1,6 @@
+import MacroTools
+import MacroTools: isexpr
+
 """
     LiteralOrSymbolic
 

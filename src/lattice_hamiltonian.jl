@@ -1,3 +1,5 @@
+import LinearAlgebra: I
+
 """
     LatticeHamiltonian{real_dim,lattice_dim,F}
 
@@ -81,45 +83,6 @@ macro lattice_hamiltonian(input)
     quote
         $H
     end
-end
-
-# should we go ahead and implement AbstractMatrix?
-function size(H::LatticeHamiltonian)
-    l = H.d * prod(H.L)
-    return l, l
-end
-
-function length(H::LatticeHamiltonian)
-    return (H.d * prod(H.L))^2
-end
-
-function eltype(::LatticeHamiltonian) #Hardcoded as ComplexF64 for the moment.
-    return ComplexF64
-end
-
-function adjoint(H::LatticeHamiltonian) #Hardcoding that the matrix is Hermitian!!
-    return H
-end
-
-"""
-    mul!(ψout::AbstractVector, H::LatticeHamiltonian, ψin::AbstractVector)
-
-Efficiently perform the matrix multiplaction `H*ψin`, writing the result to `ψout`.
-"""
-function mul!(ψout::AbstractVector, H::LatticeHamiltonian, ψin::AbstractVector)
-    H.apply!(ψout, ψin, H.d, H.L, H.params)
-end
-
-"""
-    *(H::LatticeHamiltonian, ψ::AbstractVector)
-
-Overloaded matrix multiplication operator for `LatticeHamiltonian`s
-using the `mul!` function.
-"""
-function *(H::LatticeHamiltonian, ψ::AbstractVector)
-    v = Array{eltype(ψ)}(undef, length(ψ))
-    mul!(v, H, ψ)
-    return v
 end
 
 function sitenumber(r, H::LatticeHamiltonian)

@@ -1,16 +1,17 @@
 using LatticeHamiltonians
 using Test
 using LinearAlgebra
+using SparseArrays
 
 include("wavefunction_helpers.jl")
 
-@testset "LatticeHamiltonians.jl" verbose=true begin
+@testset "LatticeHamiltonians.jl" verbose = true begin
     @testset "Unit tests" begin
-      include("exprs.jl")
+        include("exprs.jl")
     end
 
     @testset "Integration Tests" begin
-      include("comparison.jl")
-      include("3d_hamiltonian_build.jl")
+        include("comparison.jl")
+        include("3d_hamiltonian_build.jl")
     end
 end

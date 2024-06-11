@@ -346,7 +346,8 @@ function build_sparse(H::LatticeHamiltonian, V, T)
     dim = length(H.L)
     eval(
         quote
-            function sparse(H::$(typeof(H)))
+            import SparseArrays
+            function SparseArrays.sparse(H::$(typeof(H)))
                 ivals = Array{Int64}(undef, $nz)
                 jvals = Array{Int64}(undef, $nz)
                 hvals = Array{ComplexF64}(undef, $nz)

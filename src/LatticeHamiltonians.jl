@@ -4,16 +4,13 @@ Functions and structures for constructing and applying Hamiltonians on lattice s
 module LatticeHamiltonians
 
 import StaticArrays: SVector, SMatrix, MVector
-import LinearAlgebra: I, mul!
-import MacroTools
-import MacroTools: isexpr
 import SparseArrays: sparse, dropzeros!
 import Base: *, size, length, eltype, adjoint
 
-export LatticeHamiltonian, *, sparse, size, length, eltype, adjoint
-export @lattice_hamiltonian
+export LatticeHamiltonian, @lattice_hamiltonian
 
 include("lattice_hamiltonian.jl")
+include("linear_algebra.jl")
 include("build_lattice_operator.jl")
 include("dsl.jl")
 
