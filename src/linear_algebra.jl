@@ -1,6 +1,7 @@
 
 import LinearAlgebra
 import LinearAlgebra: mul!
+import SparseArrays
 
 # should we go ahead and implement AbstractMatrix?
 function Base.size(H::LatticeHamiltonian)
@@ -43,4 +44,13 @@ function *(H::LatticeHamiltonian, ψ::AbstractVector)
     v = Array{eltype(ψ)}(undef, length(ψ))
     mul!(v, H, ψ)
     v
+end
+
+"""
+    sparse(H::LatticeHamiltonian)
+
+Return the sparse representation of the Hamiltonian matrix.
+"""
+function SparseArrays.sparse(H::LatticeHamiltonian)
+    H.sparse(H.d, H.L, H.params)
 end

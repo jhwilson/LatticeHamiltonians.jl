@@ -18,8 +18,9 @@ Instead, for construction of the Hamiltonian, see the `@lattice_hamiltonian` mac
   - `params::Dict{Symbol,ComplexF64}`: Parameters for potential and hopping functions
   - `r::Vector{SVector{real_dim,Float64}}`: Real-space coordinates of orbitals within a unit cell
   - `apply!::F`: Function that applies the Hamiltonian to an input wavefunction
+  - `sparse::S`: Function that constructs the sparse matrix representation of the Hamiltonian
 """
-struct LatticeHamiltonian{real_dim,lattice_dim,F}
+struct LatticeHamiltonian{real_dim,lattice_dim,F,S}
     A::SMatrix{real_dim,lattice_dim,Float64}
     B::SMatrix{real_dim,lattice_dim,Float64}
     d::Int
@@ -27,6 +28,7 @@ struct LatticeHamiltonian{real_dim,lattice_dim,F}
     params::Dict{Symbol,ComplexF64}
     r::Vector{SVector{real_dim,Float64}}
     apply!::F
+    sparse::S
 end
 
 """
@@ -69,19 +71,25 @@ with 10 unit cells.
 """
 macro lattice_hamiltonian(input)
     parsed = parse_lattice_dsl(input)
-
     # Real space structure
     A = SMatrix{parsed.dim,parsed.dim,Float64}(I) #TODO
     B = SMatrix{parsed.dim,parsed.dim,Float64}(I * 2 * pi) #TODO
     r = fill(SVector{parsed.dim}(zeros(Float64, parsed.dim)), parsed.d) #TODO
 
-    apply = eval(make_apply(parsed.V, parsed.T, parsed.dim))
-    H = LatticeHamiltonian(A, B, parsed.d, parsed.L, parsed.params, r, apply)
-
-    build_sparse(H, parsed.V, parsed.T)
-
     quote
-        $H
+        apply = $(make_apply(parsed.V, parsed.T, parsed.dim))
+        sparse = $(make_sparse(parsed.V, parsed.T, parsed.dim))
+
+        LatticeHamiltonian(
+            $A,
+            $B,
+            $(parsed.d),
+            $(parsed.L),
+            $(parsed.params),
+            $r,
+            apply,
+            sparse,
+        )
     end
 end
 

@@ -318,7 +318,7 @@ function ham_expr(V, T, dim; sparse = false)
 end
 
 """
-    make_apply(params, V, T, dim)
+    make_apply(V, T, dim)
 
 Generate an `Expr` that defines a function to apply the Hamiltonian
 given parameters for the potential and hopping terms (V and T).
@@ -341,26 +341,35 @@ function make_apply(V, T, dim)
     end
 end
 
-function build_sparse(H::LatticeHamiltonian, V, T)
-    nz = bound_nonzero(prod(H.L), H.d, T)
-    dim = length(H.L)
-    eval(
-        quote
-            import SparseArrays
-            function SparseArrays.sparse(H::$(typeof(H)))
-                ivals = Array{Int64}(undef, $nz)
-                jvals = Array{Int64}(undef, $nz)
-                hvals = Array{ComplexF64}(undef, $nz)
-                idx = 1
-                params = H.params
-                d = H.d
-                L = H.L
-                $(ham_expr(V, T, dim; sparse = true))
-                idx -= 1
-                return dropzeros!(
-                    sparse(ivals[1:idx], jvals[1:idx], hvals[1:idx], size(H)...),
-                )
-            end
-        end,
-    )
+"""
+    make_sparse(V, T, dim)
+
+Generate an `Expr` that defines a function to construct the sparse matrix representation
+of the Hamiltonian given parameters for the potential and hopping terms (V and T).
+"""
+function make_sparse(V, T, dim)
+    quote
+        function (d::Int, L::MVector{$dim,Int64}, params::Dict{Symbol,ComplexF64})
+            nz = bound_nonzero(prod(L), d, $T)
+            matrix_size = d * prod(L)
+
+            ivals = Array{Int64}(undef, nz)
+            jvals = Array{Int64}(undef, nz)
+            hvals = Array{ComplexF64}(undef, nz)
+
+            idx = 1
+            $(ham_expr(V, T, dim; sparse = true))
+            idx -= 1
+
+            dropzeros!(
+                SparseArrays.sparse(
+                    ivals[1:idx],
+                    jvals[1:idx],
+                    hvals[1:idx],
+                    matrix_size,
+                    matrix_size,
+                ),
+            )
+        end
+    end
 end
