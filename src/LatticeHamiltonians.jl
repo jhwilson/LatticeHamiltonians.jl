@@ -10,8 +10,9 @@ import Base: *, size, length, eltype, adjoint
 export LatticeHamiltonian, @lattice_hamiltonian
 
 include("lattice_hamiltonian.jl")
-include("linear_algebra.jl")
-include("build_lattice_operator.jl")
 include("dsl.jl")
+include("builder.jl")
+include("build_lattice_operator.jl")
+include("linear_algebra.jl")
 
 end
