@@ -1,11 +1,11 @@
 using LatticeHamiltonians
 using BenchmarkTools
 using LinearAlgebra
+using SparseArrays
 using Arpack
 
 H = @lattice_hamiltonian begin
     L = [100]
-    V = [0.0, 0.0]
     (0) -> [0 t1; t1 0]
     (1) -> [0 t2; 0 0]
     (-1) -> [0 0; t2 0]
