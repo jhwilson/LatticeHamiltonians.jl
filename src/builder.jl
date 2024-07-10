@@ -9,7 +9,7 @@ The fields here are subset of those on `LatticeHamiltonian` and are used to cons
 
 See also: [`@builder`](@ref), [`build`](@ref)
 """
-@kwdef struct HamiltonianBuilder{real_dim,lattice_dim}
+Base.@kwdef struct HamiltonianBuilder{real_dim,lattice_dim}
     # A::SMatrix{real_dim,lattice_dim,Float64}
     # B::SMatrix{real_dim,lattice_dim,Float64}
     # r::Vector{SVector{real_dim,Float64}}
