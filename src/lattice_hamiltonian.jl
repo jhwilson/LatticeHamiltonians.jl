@@ -1,7 +1,7 @@
 import LinearAlgebra: I
 
 """
-    LatticeHamiltonian{real_dim,lattice_dim,F}
+    LatticeHamiltonian{real_dim,lattice_dim,F,S}
 
 Stores information about the Hamiltonian of the system, so that matrix-vector multiplication
 can be performed efficiently.
