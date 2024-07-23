@@ -25,11 +25,10 @@ using LatticeHamiltonians:
             vals = [1, 2, 3, 4, :ψ, :ϕ],
         )
         # Test expressions with that clearly evaluate to zero
-        @test_broken nonzero_elements(:([0im 0 + 0 0 - 0 0 * 0])) ==
-                     (row = [], cols = [], vals = [])
+        @test nonzero_elements(:([0im 0+0; 0-0 0*0])) == (rows = [], cols = [], vals = [])
         # Test literal expressions or literal complex numbers
-        @test_broken nonzero_elements(:([4im, 0, 1 + 2im, 2 * 3])) ==
-                     (rows = [1, 2, 2], cols = [1, 1, 2], vals = [4im, 1 + 2im, 6])
+        @test nonzero_elements(:([4im 0; 1+2im 2*3])) ==
+              (rows = [1, 2, 2], cols = [1, 1, 2], vals = [4im, 1 + 2im, 6])
     end
 
     @testset "symbols_to_lookup" begin

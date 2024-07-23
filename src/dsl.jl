@@ -262,18 +262,42 @@ function nonzero_elements(matrix::Expr)
     vals = LiteralOrSymbolic[]
 
     foreach_element(matrix) do ri, ci, elem
-        if !(elem isa Number && iszero(elem))
-            push!(rows, ri)
-            push!(cols, ci)
-            if elem isa Number
-                push!(vals, ComplexF64(elem))
-            else
-                push!(vals, elem)
+        # simplify literal expressions
+        if isliteral(elem)
+            elem = ComplexF64(elem isa Number ? elem : eval(elem))
+            # skip zero elements
+            if iszero(elem)
+                return
             end
         end
+        push!(rows, ri)
+        push!(cols, ci)
+        push!(vals, elem)
     end
 
    (rows = rows, cols = cols, vals = vals)
+end
+
+"""
+    isliteral(expr)
+
+Check if an expression is a literal number or a literal complex number, using a simple heuristic.
+In general, any expression that is a number or a simple arithmetic operation on numbers is considered literal.
+
+!!! note
+    Currently only supports numbers, `im`, and the arithmetic operations `+`, `-`, `*`, `/`, and `^`. 
+    Function calls like `sqrt(2)` are not considered literal.
+"""
+function isliteral(expr)
+    MacroTools.postwalk(expr) do x
+        if isexpr(x, Number) || x in [:im, :*, :+, :/, :-, :^]
+            true
+        elseif x isa Expr
+            all(x.args)
+        else
+            false
+        end
+    end
 end
 
 """
