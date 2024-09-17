@@ -83,7 +83,7 @@ function parse_lattice_dsl(input)
       T[onsite(lattice_dim)] = onsite_hops
     end
 
-    (params=params, L=L, V=V, T=T, dim=dim, d=d)
+    HamiltonianBuilder{lattice_dim, lattice_dim}(;params=params, L=L, V=V, T=T, d=d)
 end
 
 """

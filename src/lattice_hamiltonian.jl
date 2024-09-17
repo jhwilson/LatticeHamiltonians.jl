@@ -70,27 +70,8 @@ with 10 unit cells.
     end
 """
 macro lattice_hamiltonian(input)
-    parsed = parse_lattice_dsl(input)
-    # Real space structure
-    A = SMatrix{parsed.dim,parsed.dim,Float64}(I) #TODO
-    B = SMatrix{parsed.dim,parsed.dim,Float64}(I * 2 * pi) #TODO
-    r = fill(SVector{parsed.dim}(zeros(Float64, parsed.dim)), parsed.d) #TODO
-
-    quote
-        apply = $(make_apply(parsed.V, parsed.T, parsed.dim))
-        sparse = $(make_sparse(parsed.V, parsed.T, parsed.dim))
-
-        LatticeHamiltonian(
-            $A,
-            $B,
-            $(parsed.d),
-            $(parsed.L),
-            $(parsed.params),
-            $r,
-            apply,
-            sparse,
-        )
-    end
+    builder = parse_lattice_dsl(input)
+    build(builder)
 end
 
 function sitenumber(r, H::LatticeHamiltonian)

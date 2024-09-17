@@ -341,6 +341,12 @@ function make_apply(V, T, dim)
     end
 end
 
+function make_apply(
+    builder::HamiltonianBuilder{real_dim,lattice_dim},
+) where {real_dim,lattice_dim}
+    make_apply(builder.V, builder.T, lattice_dim)
+end
+
 """
     make_sparse(V, T, dim)
 
@@ -372,4 +378,10 @@ function make_sparse(V, T, dim)
             )
         end
     end
+end
+
+function make_sparse(
+    builder::HamiltonianBuilder{real_dim,lattice_dim},
+) where {real_dim,lattice_dim}
+    make_sparse(builder.V, builder.T, lattice_dim)
 end
