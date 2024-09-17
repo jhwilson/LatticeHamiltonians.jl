@@ -126,9 +126,9 @@ the number of orbitals per site `d`, and the parameter dictionary `params`.
 Return as tuple of the form `(V, hop)`.
 
 The potential is returned as a vector of `LiteralOrSymbolic` values.
-If there is no non-zero onsite hopping, `hop=nothing`, otherwise `hop` is a `Pair` of the form
+If there is no non-zero onsite hopping, `hop=nothing`, otherwise `hop` is a `Tuple` of the form
 
-    δ => (rows, cols, values)
+    (rows, cols, values)
 
 ```@example
 extract_potential(:([Δ t; t -Δ], 1, 2, Dict{Symbol,ComplexF64}(:Δ => 1.0))
