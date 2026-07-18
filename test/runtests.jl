@@ -14,5 +14,6 @@ include("wavefunction_helpers.jl")
         include("comparison.jl")
         include("3d_hamiltonian_build.jl")
         include("parameter_mutability.jl")
+        include("linear_algebra.jl")
     end
 end

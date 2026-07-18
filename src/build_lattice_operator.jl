@@ -408,12 +408,16 @@ function make_apply(V, T, dim)
             L::MVector{$dim,Int64},
             params::Dict{Symbol,ComplexF64},
         )
+            length(ψout) == d * prod(L) && length(ψin) == d * prod(L) ||
+                throw(DimensionMismatch("input and output vectors must both have length d * prod(L)"))
             # The arguments of the function are used implicitly
             # in the generated expressions
             #
             # see e.g., diag_expr, hop_expr
-            $bindings
-            $(ham_expr(V2, T2, dim))
+            @inbounds begin
+                $bindings
+                $(ham_expr(V2, T2, dim))
+            end
         end
     end
 end
@@ -443,7 +447,9 @@ function make_sparse(V, T, dim)
             hvals = Array{ComplexF64}(undef, nz)
 
             idx = 1
-            $(ham_expr(V2, T2, dim; sparse = true))
+            @inbounds begin
+                $(ham_expr(V2, T2, dim; sparse = true))
+            end
             idx -= 1
 
             dropzeros!(
