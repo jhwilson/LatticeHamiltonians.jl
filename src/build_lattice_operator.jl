@@ -44,6 +44,81 @@ dim_span_var(j) = Symbol("Lprod$j")
 # ----
 
 """
+    hoist_matrix_elements(V, T, dim)
+
+Replace site-independent symbolic matrix elements in `V` and `T` with local binding
+symbols. Identical values share a binding, while literals and values that reference
+generated loop or workspace variables remain unchanged.
+
+Returns `(bindings, V2, T2)`, where `bindings` is an expression block that evaluates
+each hoisted value exactly once as a `ComplexF64`.
+"""
+function hoist_matrix_elements(V, T, dim)
+    disallowed = Set{Symbol}(
+        [
+            :L,
+            :d,
+            :i_in,
+            :i_out,
+            :idx,
+            :ψin,
+            :ψout,
+            :ivals,
+            :jvals,
+            :hvals,
+            [site_loop_var(j) for j = 1:dim]...,
+            [dim_span_var(j) for j = 1:dim]...,
+        ],
+    )
+    contains_disallowed(value) = if value isa Symbol
+        value in disallowed
+    elseif value isa Expr
+        any(contains_disallowed, value.args)
+    else
+        false
+    end
+
+    source_symbols = Set{Symbol}()
+    collect_symbols!(value) = if value isa Symbol
+        push!(source_symbols, value)
+    elseif value isa Expr
+        foreach(collect_symbols!, value.args)
+    end
+    foreach(collect_symbols!, V)
+    for (_, (_, _, values)) in T
+        foreach(collect_symbols!, values)
+    end
+
+    bindings = Expr[]
+    binding_symbols = Dict{LiteralOrSymbolic,Symbol}()
+    function hoist(value::LiteralOrSymbolic)
+        if value isa ComplexF64 || contains_disallowed(value)
+            return value
+        end
+
+        get!(binding_symbols, value) do
+            binding_index = length(bindings) + 1
+            binding = Symbol("_h$binding_index")
+            while binding in source_symbols
+                binding_index += 1
+                binding = Symbol("_h$binding_index")
+            end
+            push!(source_symbols, binding)
+            push!(bindings, :($binding::ComplexF64 = $value))
+            binding
+        end
+    end
+
+    V2 = LiteralOrSymbolic[hoist(value) for value in V]
+    T2 = empty(T)
+    for (hops, (rows, cols, values)) in T
+        T2[hops] = (rows, cols, LiteralOrSymbolic[hoist(value) for value in values])
+    end
+
+    Expr(:block, bindings...), V2, T2
+end
+
+"""
     matrix_element(h::Function; site)
     matrix_element(h::ComplexF64; site)
     matrix_element(h; site)
@@ -324,6 +399,7 @@ Generate an `Expr` that defines a function to apply the Hamiltonian
 given parameters for the potential and hopping terms (V and T).
 """
 function make_apply(V, T, dim)
+    bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
     quote
         function (
             ψout::AbstractArray,
@@ -336,7 +412,8 @@ function make_apply(V, T, dim)
             # in the generated expressions
             #
             # see e.g., diag_expr, hop_expr
-            $(ham_expr(V, T, dim))
+            $bindings
+            $(ham_expr(V2, T2, dim))
         end
     end
 end
@@ -354,8 +431,10 @@ Generate an `Expr` that defines a function to construct the sparse matrix repres
 of the Hamiltonian given parameters for the potential and hopping terms (V and T).
 """
 function make_sparse(V, T, dim)
+    bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
     quote
         function (d::Int, L::MVector{$dim,Int64}, params::Dict{Symbol,ComplexF64})
+            $bindings
             nz = bound_nonzero(prod(L), d, $T)
             matrix_size = d * prod(L)
 
@@ -364,7 +443,7 @@ function make_sparse(V, T, dim)
             hvals = Array{ComplexF64}(undef, nz)
 
             idx = 1
-            $(ham_expr(V, T, dim; sparse = true))
+            $(ham_expr(V2, T2, dim; sparse = true))
             idx -= 1
 
             dropzeros!(

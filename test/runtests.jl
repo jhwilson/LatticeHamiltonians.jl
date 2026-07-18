@@ -13,5 +13,6 @@ include("wavefunction_helpers.jl")
     @testset "Integration Tests" begin
         include("comparison.jl")
         include("3d_hamiltonian_build.jl")
+        include("parameter_mutability.jl")
     end
 end
