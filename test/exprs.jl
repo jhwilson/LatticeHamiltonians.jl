@@ -5,7 +5,10 @@ using LatticeHamiltonians:
     SparseEntry,
     parse_hopping,
     extract_potential,
-    isonsite
+    isonsite,
+    parse_lattice_dsl
+
+EXPR_TEST_FIELD = [1.0, 2.0]
 
 @testset "Expression manipulation" begin
     @testset "nonzero_elements" begin
@@ -40,6 +43,44 @@ using LatticeHamiltonians:
               :(params[:x] + params[:y])
         @test symbols_to_lookups(:(1 + x + z), Dict{Symbol,ComplexF64}(:x => 1, :y => 2)) ==
               :($(ComplexF64(1)) + params[:x] + z)
+        fieldnames = Set([:W, :f])
+        @test symbols_to_lookups(
+            :(W[n1 - 1]),
+            Dict{Symbol,ComplexF64}(),
+            fieldnames,
+        ) == :(W[n1 - 1])
+        @test symbols_to_lookups(
+            :(t * W[n1]),
+            Dict{Symbol,ComplexF64}(:t => 1),
+            fieldnames,
+        ) == :(params[:t] * W[n1])
+        @test symbols_to_lookups(
+            :(f(2)),
+            Dict{Symbol,ComplexF64}(),
+            fieldnames,
+        ) == :(f(2))
+    end
+
+    @testset "field validation" begin
+        @test_throws ErrorException parse_lattice_dsl(
+            quote
+                L = [2]
+                (0) -> collision_field[n1]
+                (1) -> 1
+                collision_field = EXPR_TEST_FIELD
+                collision_field = 1
+            end,
+            @__MODULE__,
+        )
+        @test_throws ErrorException parse_lattice_dsl(
+            quote
+                L = [2]
+                (0) -> bare_field
+                (1) -> 1
+                bare_field = EXPR_TEST_FIELD
+            end,
+            @__MODULE__,
+        )
     end
 
     @testset "isonsite" begin

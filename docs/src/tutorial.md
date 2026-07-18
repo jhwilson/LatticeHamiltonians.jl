@@ -138,6 +138,115 @@ so one can define a state vector as a Julia array and then reshape it into a vec
 H * ψ
 ```
 
+## Site-dependent terms and disorder
+
+So far every matrix element has been a literal number or a scalar parameter — the same at every site.
+Matrix elements can also depend on the lattice site, which is how disordered models are built.
+Two ingredients are involved:
+
+1.  **Site coordinates.** Inside any matrix element the reserved symbols `n1, n2, ...` refer to the
+    (1-based) unit-cell coordinates along each lattice dimension.
+2.  **Fields.** An assignment `name = value` whose value is *not* a number — an array, a function,
+    anything — declares a *field*. Fields are stored on the Hamiltonian as `H.fields[:name]` and can
+    be referenced in matrix elements: `W[n1]`, `W[n1, n2]`, `f(n1)`.
+
+The Anderson model of a disordered chain,
+
+```math
+H = \sum_{\langle ij\rangle} t\, c_i^\dagger c_j + \sum_i W_i\, c^\dagger_i c_i,
+```
+
+with random on-site energies ``W_i``, is then:
+
+```@example disorder
+using LatticeHamiltonians
+
+W_realization = 2.0 .* rand(100) .- 1.0   # uniform disorder in [-1, 1]
+
+H = @lattice_hamiltonian begin
+    L = [100]
+    (0) -> W[n1]      # on-site energy of site n1 is W[n1]
+    (1) -> t
+    (-1) -> t
+    t = 1.0
+    W = W_realization
+end
+
+nothing #hide
+```
+
+The array must exist when the macro runs (define it on a line before the macro call, at top level),
+and its *concrete type* is captured into the compiled Hamiltonian.
+Real-valued disorder arrays (`Vector{Float64}` as above) keep the fastest generated code path,
+so prefer them over complex arrays when the disorder is real.
+
+### Which site does a hopping element see?
+
+For a hopping `(δ1, δ2, ...) -> M`, the site coordinates `n1, n2, ...` refer to the **source**
+site of the hop — the site the amplitude is taken *from*. That is, the element multiplies
+``c^\dagger_{n+\delta}\, c_{n}``, consistent with `(δ) -> t` setting ``\langle n+\delta|H|n\rangle = t``.
+Hermiticity is not enforced, so for bond disorder you supply both directions yourself; the
+reverse hop starts from the *other* bond end, which you reach with `mod1` index arithmetic
+(`L` is available inside matrix elements):
+
+```julia
+J_realization = randn(100)
+
+H = @lattice_hamiltonian begin
+    L = [100]
+    (0) -> 0
+    (1) -> J[n1]                          # ⟨n+1| H |n⟩ = J[n]
+    (-1) -> conj(J[mod1(n1 - 1, L[1])])   # ⟨n-1| H |n⟩ = conj(J[n-1])
+    J = J_realization
+end
+```
+
+Both lines describe the same bond: `J[n]` lives on the bond between `n` and `n+1`, labeled by
+its lower site.
+
+!!! warning "Index arithmetic is unchecked"
+    The generated loops run with bounds checks disabled. Direct indexing by site coordinates
+    (`W[n1]`, `W[n1, n2]`) is checked once against `L` when the Hamiltonian is applied, but any
+    *computed* index — like the `mod1(...)` above — is your responsibility: an out-of-range index
+    is undefined behavior, not a `BoundsError`. Always wrap shifted indices in `mod1(..., L[j])`.
+
+### Swapping disorder realizations
+
+Like parameters, fields are looked up at application time, so a new disorder realization does not
+require rebuilding the Hamiltonian. Refill the array in place, or rebind to another array of the
+same concrete type:
+
+```julia
+H.fields[:W] .= 2.0 .* rand(100) .- 1.0   # in-place refill
+H.fields[:W] = another_realization        # rebind, same concrete type
+```
+
+Assigning a value of a *different* type (e.g. a `Vector{Int}` where a `Vector{Float64}` was
+captured) throws a `TypeError` at the next application — build a new Hamiltonian in that case.
+
+### Functions as matrix elements
+
+A field can also be a function, called explicitly with whatever arguments you like — typically the
+site coordinates:
+
+```julia
+quasiperiodic = n -> 2.0 * cos(2π * 0.6180339887 * n)   # Aubry–André potential
+
+H = @lattice_hamiltonian begin
+    L = [100]
+    (0) -> V(n1)
+    (1) -> t
+    (-1) -> t
+    t = 1.0
+    V = quasiperiodic
+end
+```
+
+The function's concrete type is captured, so calls compile to direct (devirtualized) calls;
+swapping in a *different* function later requires building a new Hamiltonian. For large systems an
+array field is generally faster than recomputing a function at every application — precompute when
+the potential is expensive.
+
 ## Worked Example: Graphene
 
 We now use what we have learned to examine the tight-binding structure of graphene.

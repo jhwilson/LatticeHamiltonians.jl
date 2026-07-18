@@ -31,7 +31,7 @@ function LinearAlgebra.mul!(
     H::LatticeHamiltonian,
     ψin::AbstractVector,
 )
-    H.apply!(ψout, ψin, H.d, H.L, H.params)
+    H.apply!(ψout, ψin, H.d, H.L, H.params, H.fields)
 end
 
 """
@@ -52,5 +52,5 @@ end
 Return the sparse representation of the Hamiltonian matrix.
 """
 function SparseArrays.sparse(H::LatticeHamiltonian)
-    H.sparse(H.d, H.L, H.params)
+    H.sparse(H.d, H.L, H.params, H.fields)
 end

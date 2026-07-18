@@ -2,6 +2,7 @@ using LatticeHamiltonians
 using Test
 using LinearAlgebra
 using Logging
+using Random
 using SparseArrays
 
 include("wavefunction_helpers.jl")
@@ -13,6 +14,7 @@ include("wavefunction_helpers.jl")
 
     @testset "Integration Tests" begin
         include("comparison.jl")
+        include("site_dependent.jl")
         include("3d_hamiltonian_build.jl")
         include("fused_apply.jl")
         include("hop_folding.jl")

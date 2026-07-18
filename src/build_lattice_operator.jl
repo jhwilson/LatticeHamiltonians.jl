@@ -465,6 +465,24 @@ function loop_region(ranges, ex, axis = length(ranges))
 end
 
 """
+    substitute_site(value, site, dim)
+
+Replace the site loop variables `n1, n2, ...` in a matrix-element expression with
+the given per-axis coordinate expressions. Hopping values are written in terms of
+the source site of the bond — `(1) -> J[n1]` puts `J[n]` on ⟨n+1|H|n⟩ — while the
+fused kernels loop over output sites, so field references and other
+site-dependent expressions must be re-anchored to the (possibly wrapped)
+input-site coordinates.
+"""
+function substitute_site(value, site, dim)
+    replacements = Dict{Symbol,Any}(site_loop_var(axis) => site[axis] for axis = 1:dim)
+    substitute(x) =
+        x isa Symbol ? get(replacements, x, x) :
+        x isa Expr ? Expr(x.head, map(substitute, x.args)...) : x
+    substitute(value)
+end
+
+"""
     fused_site_expr(V, T, dim; boundary, real_values)
 
 Generate one fused site update. Each output orbital is accumulated in a register:
@@ -515,15 +533,24 @@ function fused_site_expr(V, T, dim; boundary, real_values = false)
             push!(statements, :($accumulator = $product))
         end
 
-        for (hop_index, (_, (rows, cols, values))) in enumerate(T)
+        for (hop_index, (hops, (rows, cols, values))) in enumerate(T)
             input_index = if boundary
                 Symbol("_iin$hop_index")
             else
                 :(i + $(Symbol("_hoff$hop_index")))
             end
+            input_site = if boundary
+                Any[Symbol("_m$(hop_index)_$axis") for axis = 1:dim]
+            else
+                Any[
+                    iszero(hops[axis]) ? site_loop_var(axis) :
+                    :($(site_loop_var(axis)) + $(hops[axis])) for axis = 1:dim
+                ]
+            end
             for (row, col, value) in zip(rows, cols, values)
                 col == orbital || continue
-                matrix_value = matrix_element(value; site = site)
+                value = value isa Expr ? substitute_site(value, input_site, dim) : value
+                matrix_value = matrix_element(value; site = input_site)
                 matrix_value == :() && continue
                 product = if real_values
                     :(real($matrix_value) * ψin[$input_index+$row])
@@ -613,8 +640,8 @@ end
 
 Generate a prelude condition for the fused real-coefficient specialization. Hoisted
 symbols are checked once per apply; real literals need no check, while complex
-literals and site-dependent expressions conservatively select the exact complex
-interior. Boundary slabs always use the exact complex expressions.
+literals and expressions not provably real select the exact complex interior.
+Boundary slabs always use the exact complex expressions.
 
 The specialization multiplies by `real(t)` instead of `t + 0im`. For finite inputs
 this is exact, but when ψin contains `Inf` or `NaN` components it skips the
@@ -623,7 +650,23 @@ non-finite inputs can yield different (finite-imaginary) results than `sparse(H)
 or the boundary sites. This trade is intentional: it is what enables the `@simd
 ivdep` interior sweep.
 """
-function all_real_matrix_elements(V, T)
+function provably_real(expr, field_types::Dict{Symbol,DataType})
+    if expr isa Number
+        return isreal(expr)
+    elseif expr isa Expr && expr.head == :ref
+        field = expr.args[1]
+        return field isa Symbol && haskey(field_types, field) &&
+               eltype(field_types[field]) <: Real
+    elseif expr isa Expr && expr.head == :call && expr.args[1] in (:+, :-, :*, :/, :^)
+        return all(arg -> provably_real(arg, field_types), expr.args[2:end])
+    end
+    false
+end
+
+all_real_matrix_elements(V, T) =
+    all_real_matrix_elements(V, T, Dict{Symbol,DataType}())
+
+function all_real_matrix_elements(V, T, field_types::Dict{Symbol,DataType})
     checks = Expr[]
     matrix_values = Any[V...]
     for (_, (_, _, values)) in T
@@ -634,6 +677,8 @@ function all_real_matrix_elements(V, T)
             isreal(value) || return false
         elseif value isa Symbol
             push!(checks, :(isreal($value)))
+        elseif provably_real(value, field_types)
+            continue
         else
             return false
         end
@@ -648,7 +693,7 @@ Generate the matrix-free Hamiltonian body as one interior sweep plus ordered,
 pairwise-disjoint boundary slabs. The prelude retains the lattice spans and adds
 one constant linear hop offset and the common interior bounds.
 """
-function fused_apply_expr(V, T, dim)
+function fused_apply_expr(V, T, dim, field_types = Dict{Symbol,DataType}())
     # A `T[hops]` entry `(row, col, value)` means H[(n + hops, row), (n, col)] = value,
     # matching the sparse constructor: `(1) -> t` puts `t` on ⟨n+1|H|n⟩. The fused
     # kernels gather into the output site, so re-key the table by the gather
@@ -673,7 +718,7 @@ function fused_apply_expr(V, T, dim)
         push!(bounds, :($(Symbol("_lo$axis")) = $(1 + lower[axis])))
         push!(bounds, :($(Symbol("_hi$axis")) = L[$axis] - $(upper[axis])))
     end
-    real_condition = all_real_matrix_elements(V, T)
+    real_condition = all_real_matrix_elements(V, T, field_types)
     interior = if real_condition === true
         loop_fused_interior(V, T, dim; real_values = true)
     elseif real_condition === false
@@ -715,13 +760,64 @@ function hop_extent_guard(T, dim)
 end
 
 """
+    field_prelude(fields, V, T, dim)
+
+Bind declared fields to type-asserted locals and validate direct site-coordinate
+indexing. Computed indices are used under `@inbounds` and remain the user's
+responsibility.
+"""
+function field_prelude(fields::Dict{Symbol,Any}, V, T, dim)
+    expressions = Expr[]
+    fieldnames = Set{Symbol}(keys(fields))
+    for name in sort!(collect(keys(fields)); by = String)
+        field_type = typeof(fields[name])
+        push!(expressions, :($name = (fields[$(QuoteNode(name))])::$field_type))
+    end
+
+    guards = Set{Tuple{Symbol,Int,Int}}()
+    site_variables = Dict(site_loop_var(axis) => axis for axis = 1:dim)
+    function collect_guards!(value)
+        value isa Expr || return
+        if value.head == :ref && value.args[1] isa Symbol &&
+           value.args[1] in fieldnames &&
+           all(
+               index -> index isa Symbol && haskey(site_variables, index),
+               value.args[2:end],
+           )
+            field = value.args[1]
+            for (index_dimension, index) in enumerate(value.args[2:end])
+                push!(guards, (field, index_dimension, site_variables[index]))
+            end
+        end
+        foreach(collect_guards!, value.args)
+    end
+    foreach(collect_guards!, V)
+    for (_, (_, _, values)) in T
+        foreach(collect_guards!, values)
+    end
+    for (field, field_dimension, lattice_dimension) in sort!(collect(guards))
+        message = "field $field is too small along dimension $field_dimension"
+        push!(
+            expressions,
+            :(size($field, $field_dimension) >= L[$lattice_dimension] ||
+              throw(DimensionMismatch($message))),
+        )
+    end
+    Expr(:block, expressions...)
+end
+
+"""
     make_apply(V, T, dim)
 
 Generate an `Expr` that defines a function to apply the Hamiltonian
 given parameters for the potential and hopping terms (V and T).
 """
-function make_apply(V, T, dim)
+function make_apply(V, T, dim, fields::Dict{Symbol,Any} = Dict{Symbol,Any}())
+    prelude = field_prelude(fields, V, T, dim)
     bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
+    field_types = Dict{Symbol,DataType}(
+        name => typeof(value) for (name, value) in fields
+    )
     quote
         function (
             ψout::AbstractArray,
@@ -729,6 +825,7 @@ function make_apply(V, T, dim)
             d::Int,
             L::MVector{$dim,Int64},
             params::Dict{Symbol,ComplexF64},
+            fields::Dict{Symbol,Any},
         )
             length(ψout) == d * prod(L) && length(ψin) == d * prod(L) ||
                 throw(DimensionMismatch("input and output vectors must both have length d * prod(L)"))
@@ -738,8 +835,9 @@ function make_apply(V, T, dim)
             #
             # see e.g., diag_expr, hop_expr
             @inbounds begin
+                $prelude
                 $bindings
-                $(fused_apply_expr(V2, T2, dim))
+                $(fused_apply_expr(V2, T2, dim, field_types))
             end
         end
     end
@@ -748,7 +846,7 @@ end
 function make_apply(
     builder::HamiltonianBuilder{real_dim,lattice_dim},
 ) where {real_dim,lattice_dim}
-    make_apply(builder.V, builder.T, lattice_dim)
+    make_apply(builder.V, builder.T, lattice_dim, builder.fields)
 end
 
 """
@@ -757,12 +855,19 @@ end
 Generate an `Expr` that defines a function to construct the sparse matrix representation
 of the Hamiltonian given parameters for the potential and hopping terms (V and T).
 """
-function make_sparse(V, T, dim)
+function make_sparse(V, T, dim, fields::Dict{Symbol,Any} = Dict{Symbol,Any}())
+    prelude = field_prelude(fields, V, T, dim)
     bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
     per_cell_count = bound_nonzero(1, length(V), T)
     quote
-        function (d::Int, L::MVector{$dim,Int64}, params::Dict{Symbol,ComplexF64})
+        function (
+            d::Int,
+            L::MVector{$dim,Int64},
+            params::Dict{Symbol,ComplexF64},
+            fields::Dict{Symbol,Any},
+        )
             $(hop_extent_guard(T2, dim))
+            $prelude
             $bindings
             nz = $per_cell_count * prod(L)
             matrix_size = d * prod(L)
@@ -793,5 +898,5 @@ end
 function make_sparse(
     builder::HamiltonianBuilder{real_dim,lattice_dim},
 ) where {real_dim,lattice_dim}
-    make_sparse(builder.V, builder.T, lattice_dim)
+    make_sparse(builder.V, builder.T, lattice_dim, builder.fields)
 end
