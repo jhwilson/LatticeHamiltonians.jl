@@ -32,12 +32,14 @@ using LatticeHamiltonians:
     end
 
     @testset "symbols_to_lookup" begin
+        # Expected literals are folded to ComplexF64, matching what
+        # symbols_to_lookups emits (nightly's Expr `==` compares them strictly)
         @test symbols_to_lookups(:(1 + 2), Dict{Symbol,ComplexF64}(:x => 1, :y => 2)) ==
-              :(1 + 2)
+              :($(ComplexF64(1)) + $(ComplexF64(2)))
         @test symbols_to_lookups(:(x + y), Dict{Symbol,ComplexF64}(:x => 1, :y => 2)) ==
               :(params[:x] + params[:y])
         @test symbols_to_lookups(:(1 + x + z), Dict{Symbol,ComplexF64}(:x => 1, :y => 2)) ==
-              :(1 + params[:x] + z)
+              :($(ComplexF64(1)) + params[:x] + z)
     end
 
     @testset "isonsite" begin
