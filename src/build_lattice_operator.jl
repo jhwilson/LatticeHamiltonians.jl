@@ -378,7 +378,11 @@ function ham_expr(V, T, dim; sparse = false)
     # NOTE: it is very important that the diagonal code is evaluated first
     # as it is responsible for zeroing out the output vector
     expr_V = make_diag_expr(V, dim; sparse = sparse)
-    expr_diag = loop_sites(dim, expr_V)
+    expr_diag = if !sparse && all(V -> V isa ComplexF64 && iszero(V), V)
+        :(fill!(ψout, zero(ComplexF64)))
+    else
+        loop_sites(dim, expr_V)
+    end
 
     # evaluate the off-diagonal elements
     expr_hops = Vector{Expr}(undef, length(T))
@@ -436,10 +440,11 @@ of the Hamiltonian given parameters for the potential and hopping terms (V and T
 """
 function make_sparse(V, T, dim)
     bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
+    per_cell_count = bound_nonzero(1, length(V), T)
     quote
         function (d::Int, L::MVector{$dim,Int64}, params::Dict{Symbol,ComplexF64})
             $bindings
-            nz = bound_nonzero(prod(L), d, $T)
+            nz = $per_cell_count * prod(L)
             matrix_size = d * prod(L)
 
             ivals = Array{Int64}(undef, nz)
