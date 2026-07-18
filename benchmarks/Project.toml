@@ -2,6 +2,8 @@
 Arpack = "7d9fca2a-8960-54d3-9f78-7d1dccf2cb97"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 LatticeHamiltonians = "9e9b75d1-dfe4-4175-a81f-d9649fafcdca"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [extras]
 BenchmarkPlots = "ab8c0f59-4072-4e0d-8f91-a91e1495eb26"
