@@ -69,9 +69,17 @@ It expects the following types of expressions, supplied in any order.
     and conventions.
 
 The kernels are compiled as runtime-generated functions when the expanded
-code runs, so the macro also works inside a function body: the Hamiltonian is
-immediately usable there, and each evaluation produces an independent
-`LatticeHamiltonian` (mutating one `H.params` never affects a later build).
+code runs, so the macro result also works inside a function body: the
+Hamiltonian is immediately usable there, and each evaluation gets fresh
+`params` and `fields` *bindings* (mutating one `H.params` never affects a
+later build). Mutable field *values* — disorder arrays and the like — are
+shared across evaluations by design, so in-place mutation updates every
+Hamiltonian bound to them. Two restrictions remain: assignments (and `L`) are
+evaluated at macro-expansion time in the enclosing module's scope, so they
+cannot reference function-local variables — use the `hamiltonian` model
+frontend for runtime sizes, parameters, or fields — and each evaluation
+regenerates and hashes the kernel expressions (∼0.3 ms), so hoist the macro
+out of hot loops and mutate `H.params` instead of rebuilding.
 
 # Examples
 

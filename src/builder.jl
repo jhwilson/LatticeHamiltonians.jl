@@ -31,8 +31,10 @@ macro builder(input)
     parse_lattice_dsl(input, __module__)
 end
 
-# Fresh mutable state (params/fields/L) so Hamiltonians built from the same
-# builder don't alias; V and T are only read during kernel generation.
+# Fresh params/fields/L *bindings* so Hamiltonians built from the same
+# builder don't alias each other's dictionaries; the copies are shallow, so
+# mutable field values (disorder arrays, callbacks) intentionally stay
+# shared. V and T are only read during kernel generation.
 Base.copy(builder::HamiltonianBuilder{real_dim,lattice_dim}) where {real_dim,lattice_dim} =
     HamiltonianBuilder{real_dim,lattice_dim}(
         builder.V,
@@ -48,9 +50,16 @@ Base.copy(builder::HamiltonianBuilder{real_dim,lattice_dim}) where {real_dim,lat
 # through RuntimeGeneratedFunctions instead of `eval` keeps the kernel callable
 # in the world that created it, so `build` works inside functions and never
 # evaluates into a closed module during downstream precompilation.
+# opaque_closures=false is load-bearing: the emitters are closure-free by
+# construction, and an accidental closure should fail loudly instead of being
+# silently rewritten with different semantics.
 function compile_kernel(block::Expr)
     kernel_def = only(arg for arg in block.args if arg isa Expr)
-    RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, kernel_def)
+    kernel_def.head === :function || error(
+        "emitter must produce a block containing exactly one anonymous " *
+        "function definition, got a $(kernel_def.head) expression",
+    )
+    RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, kernel_def; opaque_closures = false)
 end
 
 """

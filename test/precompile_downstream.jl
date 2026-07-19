@@ -1,9 +1,11 @@
 # A downstream package must be able to precompile while using
 # LatticeHamiltonians, and — after loading from the precompile cache in a
-# fresh session — build and apply Hamiltonians at runtime. (The supported
+# fresh session — build and apply Hamiltonians at runtime. The supported
 # pattern: store models/builders as top-level consts, build at runtime.
-# The old eval backend failed this outright with "evaluation into closed
-# module".)
+# On the old eval backend this test failed twice over: the in-function
+# @lattice_hamiltonian expansion aborted downstream precompilation with
+# "evaluation into the closed module", and the model path, though it
+# precompiled, hit a world-age MethodError at first runtime use.
 
 @testset "Downstream package precompilation" begin
     mktempdir() do dir

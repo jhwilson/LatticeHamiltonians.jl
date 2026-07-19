@@ -548,7 +548,10 @@ restrictions.
     functions, or in `__init__`) rather than storing a *built* Hamiltonian in
     a top-level `const` that gets baked into its precompile image; the kernel
     body cache does not survive that round trip. Storing the *model* as a
-    `const` and building from it at runtime is fully supported.
+    `const` and building from it at runtime is fully supported. The same
+    logic applies to persistence: a built Hamiltonian is a runtime object —
+    save the model (or its parameters) and rebuild, rather than writing the
+    built object to disk with e.g. JLD2.
 """
 function build(
     model::HamiltonianModel{RD,LD},

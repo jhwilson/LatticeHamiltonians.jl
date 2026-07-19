@@ -92,6 +92,43 @@ end
         @test result.matvec ≈ result.reference
     end
 
+    @testset "copy contract: fresh bindings, shared field values" begin
+        b = LatticeHamiltonians.@builder begin
+            L = [6, 6]
+            (0, 0) -> W[n1, n2]
+            (1, 0) -> t
+            (-1, 0) -> t
+            (0, 1) -> t
+            (0, -1) -> t
+            t = 1.0
+            W = FLB_W
+        end
+        b2 = copy(b)
+        @test b2.params !== b.params && b2.params == b.params
+        @test b2.fields !== b.fields
+        # mutable field values intentionally alias: in-place mutation of a
+        # disorder array is the documented way to update built Hamiltonians
+        @test b2.fields[:W] === b.fields[:W] === FLB_W
+    end
+
+    @testset "macro assignments stay expansion-time, module-scope" begin
+        # A function-local variable is invisible to the DSL's expansion-time
+        # assignment evaluation; the model frontend is the runtime-data path.
+        @test_throws UndefVarError macroexpand(
+            @__MODULE__,
+            :(function flb_local_capture(W_local)
+                @lattice_hamiltonian begin
+                    L = [4]
+                    (0) -> [0 t; t 0]
+                    (1) -> [0 t; 0 0]
+                    (-1) -> [0 0; t 0]
+                    t = 1.0
+                    W = W_local
+                end
+            end),
+        )
+    end
+
     @testset "model frontend inside a function (disorder + solver)" begin
         W = rand(12) .- 0.5
         result = flb_model_workflow(12, W)
