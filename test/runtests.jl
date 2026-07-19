@@ -25,5 +25,10 @@ include("wavefunction_helpers.jl")
         include("frontend_models.jl")
         include("frontend_local.jl")
         include("frontend_geometry.jl")
+        include("function_local_build.jl")
+    end
+
+    @testset "Precompilation" begin
+        include("precompile_downstream.jl")
     end
 end

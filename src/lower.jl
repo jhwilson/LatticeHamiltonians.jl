@@ -537,12 +537,18 @@ dimension. `parameters` overrides declared defaults; `fields` supplies a
 concrete value for every declared field. Only `Periodic()` boundaries are
 supported in this version.
 
-!!! warning "World age"
+The compiled kernels are runtime-generated functions
+(RuntimeGeneratedFunctions.jl), so the returned Hamiltonian is immediately
+usable — including inside the function that called `build`, with no world-age
+restrictions.
 
-    The compiled kernels are created with `eval` at build time. Call `build`
-    at top level (REPL, script, or the top level of a test file); a
-    Hamiltonian built *inside* a function cannot be applied within that same
-    function call unless you go through `Base.invokelatest`.
+!!! note "Precompiled downstream packages"
+
+    A package that precompiles should create Hamiltonians at runtime (inside
+    functions, or in `__init__`) rather than storing a *built* Hamiltonian in
+    a top-level `const` that gets baked into its precompile image; the kernel
+    body cache does not survive that round trip. Storing the *model* as a
+    `const` and building from it at runtime is fully supported.
 """
 function build(
     model::HamiltonianModel{RD,LD},

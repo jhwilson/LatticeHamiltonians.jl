@@ -6,6 +6,10 @@ module LatticeHamiltonians
 import StaticArrays: SVector, SMatrix, MVector
 import SparseArrays: sparse, dropzeros!
 import Base: *, size, length, eltype, adjoint
+import RuntimeGeneratedFunctions
+import RuntimeGeneratedFunctions: RuntimeGeneratedFunction
+
+RuntimeGeneratedFunctions.init(@__MODULE__)
 
 export LatticeHamiltonian, @lattice_hamiltonian
 export Lattice,

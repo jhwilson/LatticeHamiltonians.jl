@@ -31,6 +31,28 @@ macro builder(input)
     parse_lattice_dsl(input, __module__)
 end
 
+# Fresh mutable state (params/fields/L) so Hamiltonians built from the same
+# builder don't alias; V and T are only read during kernel generation.
+Base.copy(builder::HamiltonianBuilder{real_dim,lattice_dim}) where {real_dim,lattice_dim} =
+    HamiltonianBuilder{real_dim,lattice_dim}(
+        builder.V,
+        builder.T,
+        builder.d,
+        copy(builder.L),
+        copy(builder.params),
+        copy(builder.fields),
+    )
+
+# make_apply/make_sparse return a block wrapping a single anonymous-function
+# definition; RuntimeGeneratedFunction wants the bare function Expr. Compiling
+# through RuntimeGeneratedFunctions instead of `eval` keeps the kernel callable
+# in the world that created it, so `build` works inside functions and never
+# evaluates into a closed module during downstream precompilation.
+function compile_kernel(block::Expr)
+    kernel_def = only(arg for arg in block.args if arg isa Expr)
+    RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, kernel_def)
+end
+
 """
     build(builder::HamiltonianBuilder{real_dim,lattice_dim})
 
@@ -68,8 +90,8 @@ function build(
         builder.params,
         builder.fields,
         r,
-        eval(make_apply(builder)),
-        eval(make_sparse(builder)),
+        compile_kernel(make_apply(builder)),
+        compile_kernel(make_sparse(builder)),
         meta,
     )
 end

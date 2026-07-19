@@ -68,6 +68,11 @@ It expects the following types of expressions, supplied in any order.
     site-dependent (e.g. disordered) Hamiltonians. See the tutorial for details
     and conventions.
 
+The kernels are compiled as runtime-generated functions when the expanded
+code runs, so the macro also works inside a function body: the Hamiltonian is
+immediately usable there, and each evaluation produces an independent
+`LatticeHamiltonian` (mutating one `H.params` never affects a later build).
+
 # Examples
 
 The following creates a Su-Schrieffer-Heeger (SSH) Hamiltonian on a 1D lattice,
@@ -86,8 +91,12 @@ with 10 unit cells.
     end
 """
 macro lattice_hamiltonian(input)
+    # Parse (and evaluate assignments) at expansion time, but build at
+    # runtime: kernels are runtime-generated functions, so the resulting
+    # Hamiltonian is immediately usable even inside the enclosing function,
+    # and each evaluation gets fresh params/fields via copy.
     builder = parse_lattice_dsl(input, __module__)
-    build(builder)
+    :($build($copy($builder)))
 end
 
 function sitenumber(r, H::LatticeHamiltonian)

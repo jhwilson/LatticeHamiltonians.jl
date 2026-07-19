@@ -1,8 +1,9 @@
 # Static-coefficient models through the builder frontend, compared against
 # hand-written dense matrices and against the legacy macro.
 #
-# `build(model, ...)` compiles kernels with `eval` at call time, so every build
-# lives at file top level; testsets only apply the resulting operators.
+# Builds live at file top level for historical reasons only; kernels are
+# runtime-generated functions, so `build` also works inside functions
+# (see function_local_build.jl).
 
 using LatticeHamiltonians: Realization
 

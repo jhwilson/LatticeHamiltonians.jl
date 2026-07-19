@@ -439,12 +439,14 @@ set_parameter!(H; t = 1.2, μ = -0.1)
 parameters(H)
 ```
 
-!!! warning "Call `build` at top level"
-    `build` compiles its kernels with `eval` when it is called. Building a
-    Hamiltonian *inside* a function and applying it in that same function
-    call fails with a world-age `MethodError`; call `build` at top level (the
-    REPL, a script, or the top level of a test file), or apply the result
-    through `Base.invokelatest`.
+!!! note "`build` works anywhere"
+    `build` compiles its kernels as runtime-generated functions
+    (RuntimeGeneratedFunctions.jl), so the returned Hamiltonian is
+    immediately usable — including inside the function that called `build`.
+    One caveat for packages that precompile: create Hamiltonians at runtime
+    (inside functions, or in `__init__`) rather than storing a built
+    Hamiltonian in a top-level `const` baked into the precompile image;
+    store the *model* instead and build from it at runtime.
 
 ### Multi-orbital models: the SSH chain
 
