@@ -1,6 +1,7 @@
 using LatticeHamiltonians
 using Test
 using LinearAlgebra
+using Logging
 using SparseArrays
 
 include("wavefunction_helpers.jl")
@@ -14,6 +15,7 @@ include("wavefunction_helpers.jl")
         include("comparison.jl")
         include("3d_hamiltonian_build.jl")
         include("fused_apply.jl")
+        include("hop_folding.jl")
         include("parameter_mutability.jl")
         include("linear_algebra.jl")
     end

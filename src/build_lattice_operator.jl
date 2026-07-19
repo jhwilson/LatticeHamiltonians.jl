@@ -685,6 +685,29 @@ function fused_apply_expr(V, T, dim)
 end
 
 """
+    hop_extent_guard(T, dim)
+
+Generate call-time checks that every compiled hopping displacement still fits
+the lattice extents. The DSL folds long displacements at parse time, but `L` is
+mutable on the built Hamiltonian; the wrap logic corrects by at most one
+lattice period, so a displacement with `abs(hop) > L[axis]` would index out of
+bounds inside the `@inbounds` kernels.
+"""
+function hop_extent_guard(T, dim)
+    checks = Expr[]
+    seen = Set{NTuple{2,Int}}()
+    for (hops, _) in T, axis = 1:dim
+        hop = abs(hops[axis])
+        iszero(hop) && continue
+        (hop, axis) in seen && continue
+        push!(seen, (hop, axis))
+        message = "hopping displacement of magnitude $hop exceeds the lattice extent along dimension $axis; rebuild the Hamiltonian for this lattice size"
+        push!(checks, :($hop <= L[$axis] || throw(ArgumentError($message))))
+    end
+    Expr(:block, checks...)
+end
+
+"""
     make_apply(V, T, dim)
 
 Generate an `Expr` that defines a function to apply the Hamiltonian
@@ -702,6 +725,7 @@ function make_apply(V, T, dim)
         )
             length(ψout) == d * prod(L) && length(ψin) == d * prod(L) ||
                 throw(DimensionMismatch("input and output vectors must both have length d * prod(L)"))
+            $(hop_extent_guard(T2, dim))
             # The arguments of the function are used implicitly
             # in the generated expressions
             #
@@ -731,6 +755,7 @@ function make_sparse(V, T, dim)
     per_cell_count = bound_nonzero(1, length(V), T)
     quote
         function (d::Int, L::MVector{$dim,Int64}, params::Dict{Symbol,ComplexF64})
+            $(hop_extent_guard(T2, dim))
             $bindings
             nz = $per_cell_count * prod(L)
             matrix_size = d * prod(L)

@@ -72,18 +72,59 @@ function parse_lattice_dsl(input)
 
 
     # Hamiltonian matrix elements
-    T = Dict{LatticeVector{lattice_dim},SparseEntry{LiteralOrSymbolic}}(
-        parse_hopping(hop, params) for hop in hops
-    )
+    T = Dict{LatticeVector{lattice_dim},SparseEntry{LiteralOrSymbolic}}()
+    for hop in hops
+        key, entry = parse_hopping(hop, params)
+        merge_hopping!(T, fold_hopping(key, L, lattice_dim), entry)
+    end
     d = orbital_dim(T)
 
     # Extract the onsite potential and hopping
     V, onsite_hops = extract_potential(exprV, dim, d, params)
     if onsite_hops !== nothing
-      T[onsite(lattice_dim)] = onsite_hops
+      merge_hopping!(T, onsite(lattice_dim), onsite_hops)
     end
 
     HamiltonianBuilder{lattice_dim, lattice_dim}(;params=params, L=L, V=V, T=T, d=d)
+end
+
+"""
+    fold_hopping(key, L, lattice_dim)
+
+Reduce each component of a hopping displacement into `-(L-1):(L-1)` for its
+periodic lattice direction. In-range components (including negative ones) are
+untouched; longer displacements are physically equivalent to their remainder,
+so they are folded rather than rejected, with an informational message since
+the wrap-around is usually unintended.
+"""
+function fold_hopping(key, L, lattice_dim)
+    folded = rem.(key, L)
+    if folded != key
+        @info "Hopping displacement $(Tuple(key)) reaches around the periodic " *
+              "lattice of extent L = $(Tuple(L)); treating it as the " *
+              "equivalent displacement $(Tuple(folded))."
+    end
+    LatticeVector{lattice_dim}(folded)
+end
+
+"""
+    merge_hopping!(T, key, (rows, cols, values))
+
+Insert a hopping entry, concatenating with any entry already stored at `key`
+(as happens when two displacements fold to the same lattice vector). Repeated
+(row, col) pairs are summed by both the sparse constructor and the fused
+accumulators.
+"""
+function merge_hopping!(T, key, entry)
+    if haskey(T, key)
+        (rows, cols, values) = T[key]
+        append!(rows, entry[1])
+        append!(cols, entry[2])
+        append!(values, entry[3])
+    else
+        T[key] = entry
+    end
+    T
 end
 
 """
