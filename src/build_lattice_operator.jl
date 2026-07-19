@@ -438,7 +438,7 @@ its complement is emitted as ordered, disjoint boundary slabs.
 function interior_margins(T, dim)
     lower = zeros(Int, dim)
     upper = zeros(Int, dim)
-    for hops in keys(T), axis = 1:dim
+    for (hops, _) in T, axis = 1:dim
         lower[axis] = max(lower[axis], -hops[axis])
         upper[axis] = max(upper[axis], hops[axis])
     end
@@ -642,6 +642,16 @@ pairwise-disjoint boundary slabs. The prelude retains the lattice spans and adds
 one constant linear hop offset and the common interior bounds.
 """
 function fused_apply_expr(V, T, dim)
+    # A `T[hops]` entry `(row, col, value)` means H[(n + hops, row), (n, col)] = value,
+    # matching the sparse constructor: `(1) -> t` puts `t` on ⟨n+1|H|n⟩. The fused
+    # kernels gather into the output site, so re-key the table by the gather
+    # displacement: at output site n the entry contributes value * ψin[n - hops, col]
+    # to the accumulator for orbital `row`. Sorting keeps the generated
+    # accumulation order independent of Dict internals.
+    T = sort!(
+        [-hops => (cols, rows, values) for (hops, (rows, cols, values)) in T];
+        by = Tuple ∘ first,
+    )
     spans = Expr[
         :($(dim_span_var(1)) = d * L[1]),
         [:($(dim_span_var(axis))=$(dim_span_var(axis-1))*L[$axis]) for axis = 2:dim]...,

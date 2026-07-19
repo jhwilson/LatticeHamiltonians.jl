@@ -94,14 +94,52 @@ end
             a = 0.7 + 0.2im
             aconj = 0.7 - 0.2im
         end
+        # (δ) -> t sets ⟨n+δ|H|n⟩ = t, so the output at n gathers t * ψin[n-δ]
         ψin = randn(ComplexF64, size(H)[1])
         expected = similar(ψin)
         for n = 1:32
             accumulator = ComplexF64(0.3) * ψin[n]
-            accumulator += ComplexF64(0.7 + 0.2im) * ψin[n == 32 ? 1 : n + 1]
-            accumulator += ComplexF64(0.7 - 0.2im) * ψin[n == 1 ? 32 : n - 1]
+            accumulator += ComplexF64(0.7 + 0.2im) * ψin[n == 1 ? 32 : n - 1]
+            accumulator += ComplexF64(0.7 - 0.2im) * ψin[n == 32 ? 1 : n + 1]
             expected[n] = accumulator
         end
         @test iszero(H * ψin - expected)
+        test_fused_against_sparse(H)
+    end
+
+    @testset "Hopping convention: (δ) -> t is ⟨n+δ|H|n⟩" begin
+        H = @lattice_hamiltonian begin
+            L = [4]
+            (1) -> t
+            (-1) -> tconj
+            t = 0.7 + 0.2im
+            tconj = 0.7 - 0.2im
+        end
+        M = Matrix(sparse(H))
+        @test M[2, 1] == 0.7 + 0.2im
+        @test M[1, 2] == 0.7 - 0.2im
+        # the matrix-free apply realizes the same matrix, column by column
+        for n = 1:4
+            e = zeros(ComplexF64, 4)
+            e[n] = 1
+            @test H * e ≈ M[:, n]
+        end
+    end
+
+    @testset "Complex Hermitian hops match sparse in 2D" begin
+        H = @lattice_hamiltonian begin
+            L = [4, 3]
+            (0, 0) -> [μ 0; 0 -μ]
+            (1, 0) -> [0 a; b 0]
+            (-1, 0) -> [0 conj(b); conj(a) 0]
+            (0, 1) -> c
+            (0, -1) -> cconj
+            μ = 0.25
+            a = 0.4 + 0.9im
+            b = -0.3 + 0.1im
+            c = 0.2 - 0.6im
+            cconj = 0.2 + 0.6im
+        end
+        test_fused_against_sparse(H)
     end
 end
