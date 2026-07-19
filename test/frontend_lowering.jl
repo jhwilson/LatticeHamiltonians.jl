@@ -15,9 +15,9 @@ using LatticeHamiltonians: lower, LatticeVector, MVector, HamiltonianBuilder, Ca
         builder, recipes = lower(model, MVector{1,Int}(6), no_params(), no_fields())
         @test isempty(recipes)
         @test builder.d == 2
-        # c†[n+1, α=1] c c[n, β=2] → legacy key -1, row = β = 2, col = α = 1
-        @test collect(keys(builder.T)) == [key(-1)]
-        @test builder.T[key(-1)] == ([2], [1], [ComplexF64(c)])
+        # c†[n+1, α=1] c c[n, β=2] → key +1, row = α = 1, col = β = 2
+        @test collect(keys(builder.T)) == [key(1)]
+        @test builder.T[key(1)] == ([1], [2], [ComplexF64(c)])
         @test builder.V == [zero(ComplexF64), zero(ComplexF64)]
     end
 
@@ -28,8 +28,8 @@ using LatticeHamiltonians: lower, LatticeVector, MVector, HamiltonianBuilder, Ca
         end
         builder, _ = lower(model, MVector{1,Int}(6), no_params(), no_fields())
         @test Set(keys(builder.T)) == Set([key(-1), key(1)])
-        @test builder.T[key(-1)] == ([2], [1], [ComplexF64(c)])
-        @test builder.T[key(1)] == ([1], [2], [conj(ComplexF64(c))])
+        @test builder.T[key(1)] == ([1], [2], [ComplexF64(c)])
+        @test builder.T[key(-1)] == ([2], [1], [conj(ComplexF64(c))])
     end
 
     @testset "Same-displacement accumulation" begin
@@ -38,7 +38,7 @@ using LatticeHamiltonians: lower, LatticeVector, MVector, HamiltonianBuilder, Ca
             hopping!(h, (1,), 0.5)
         end
         builder, _ = lower(model, MVector{1,Int}(6), no_params(), no_fields())
-        @test builder.T[key(-1)] == ([1], [1], [ComplexF64(1.5 + 2.0im)])
+        @test builder.T[key(1)] == ([1], [1], [ComplexF64(1.5 + 2.0im)])
 
         mixed = hamiltonian(chain; parameters = (t = 0.3,), hermitian = false) do h, p
             hopping!(h, (1,), 0.5)
@@ -46,7 +46,7 @@ using LatticeHamiltonians: lower, LatticeVector, MVector, HamiltonianBuilder, Ca
         end
         builder2, _ =
             lower(mixed, MVector{1,Int}(6), Dict{Symbol,ComplexF64}(:t => 0.3), no_fields())
-        @test builder2.T[key(-1)] ==
+        @test builder2.T[key(1)] ==
               ([1], [1], [Expr(:call, :+, ComplexF64(0.5), :(params[:t]))])
     end
 
@@ -57,9 +57,9 @@ using LatticeHamiltonians: lower, LatticeVector, MVector, HamiltonianBuilder, Ca
         params = Dict{Symbol,ComplexF64}(:Δ => 0.3, :t1 => 0.8)
         builder, _ = lower(model, MVector{1,Int}(6), params, no_fields())
         @test builder.V == [:(params[:Δ]), Expr(:call, :-, :(params[:Δ]))]
-        # (α=1, β=2) → (row 2, col 1); (α=2, β=1) → (row 1, col 2); sorted by (row, col)
+        # (α=1, β=2) → (row 1, col 2); (α=2, β=1) → (row 2, col 1); sorted by (row, col)
         @test builder.T[key(0)] ==
-              ([1, 2], [2, 1], [Expr(:call, :conj, :(params[:t1])), :(params[:t1])])
+              ([1, 2], [2, 1], [:(params[:t1]), Expr(:call, :conj, :(params[:t1]))])
     end
 
     @testset "Scaled identity" begin
@@ -83,10 +83,10 @@ using LatticeHamiltonians: lower, LatticeVector, MVector, HamiltonianBuilder, Ca
         wrapper = Symbol("__lh_loc1")
         @test haskey(builder.fields, wrapper)
         @test builder.fields[wrapper] isa Function
-        # forward piece reads the callback at the bond source m - a (wrapped)
-        @test builder.T[key(-1)] == ([1], [1], [:($wrapper(mod1(n1 - 1, L[1])))])
-        # reverse piece reads it unshifted and conjugated (anchor rule)
-        @test builder.T[key(1)] == ([1], [1], [:(conj($wrapper(n1)))])
+        # forward piece reads the callback at its own source cell
+        @test builder.T[key(1)] == ([1], [1], [:($wrapper(n1))])
+        # reverse piece reads it at n - a, conjugated (anchor rule)
+        @test builder.T[key(-1)] == ([1], [1], [:(conj($wrapper(mod1(n1 - 1, L[1]))))])
     end
 
     @testset "Materialized local caches and recipes" begin
@@ -107,14 +107,15 @@ using LatticeHamiltonians: lower, LatticeVector, MVector, HamiltonianBuilder, Ca
         builder, recipes = lower(model, MVector{1,Int}(6), params, all_fields)
         forward_name = Symbol("__lh_c1f_1_1")
         reverse_name = Symbol("__lh_c1r_1_1")
-        @test builder.T[key(-1)] == ([1], [1], [Expr(:ref, forward_name, :n1)])
-        @test builder.T[key(1)] == ([1], [1], [Expr(:ref, reverse_name, :n1)])
+        @test builder.T[key(1)] == ([1], [1], [Expr(:ref, forward_name, :n1)])
+        @test builder.T[key(-1)] == ([1], [1], [Expr(:ref, reverse_name, :n1)])
         forward_cache = builder.fields[forward_name]
         reverse_cache = builder.fields[reverse_name]
         @test forward_cache isa Vector{ComplexF64}
-        # forward cache is pre-shifted to the output-cell anchor
-        @test forward_cache == [J[mod1(m - 1, 6)] for m = 1:6]
-        @test reverse_cache == conj.(J)
+        # forward cache is anchored at the bond source; the reverse cache is
+        # pre-shifted to the reverse bond's source cell (the forward target)
+        @test forward_cache == J
+        @test reverse_cache == [conj(J[mod1(m - 1, 6)]) for m = 1:6]
 
         @test length(recipes) == 1
         @test recipes[1].parameter_deps == Set{Symbol}()

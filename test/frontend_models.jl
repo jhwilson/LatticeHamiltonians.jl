@@ -50,8 +50,8 @@ FM_SSH_H = build(FM_SSH_MODEL, (10,))
 FM_SSH_LEGACY = @lattice_hamiltonian begin
     L = [10]
     (0) -> [0 t1; t1 0]
-    (-1) -> [0 0; t2 0]
-    (1) -> [0 t2c; 0 0]
+    (1) -> [0 t2; 0 0]
+    (-1) -> [0 0; t2c 0]
     t1 = 1.0
     t2 = 2.0 + 0.5im
     t2c = 2.0 - 0.5im

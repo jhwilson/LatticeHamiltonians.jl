@@ -59,15 +59,14 @@ end
 
 # --- lowering: new directed-term IR → legacy HamiltonianBuilder -------------
 #
-# The generated kernels apply `ψout[i_out + col] += M[row, col] * ψin[i_in + row]`
-# with the input cell at loop-cell + δ and the loop cell being the *output*
-# cell. A directed term Σ_n c†[n+a, α] M[α, β] c[n, β] therefore lowers to the
-# legacy key δ = -a with the element (α, β) stored at (row = β, col = α) — a
-# plain transpose, no conjugation. The plus_hc reverse piece lands at key +a
-# with (row = α, col = β) and the conjugated value. Site-dependent values are
-# written at the loop (output) cell m: the forward piece reads its callback at
-# the bond source m - a (wrapped), the reverse piece at m itself, which
-# realizes the anchor rule M₋ₐ(m) = Mₐ(m - a)†.
+# A legacy `T[δ]` entry `(row, col, value)` is the matrix element
+# ⟨n+δ, row| H |n, col⟩, with site-dependent values written in terms of the
+# source cell n. A directed term Σ_n c†[n+a, α] M[α, β] c[n, β] therefore
+# lowers directly: key δ = +a with the element at (row = α, col = β) and the
+# callback anchored at its own cell n. The plus_hc reverse piece lands at key
+# -a with (row = β, col = α) and the conjugated value; its source cell is the
+# forward bond's target m = n + a, so its callback is read at m - a (wrapped),
+# realizing the anchor rule M₋ₐ(m) = Mₐ(m - a)†.
 
 combine_values(a::ComplexF64, b::ComplexF64) = a + b
 combine_values(a, b) = Expr(:call, :+, a, b)
@@ -126,8 +125,9 @@ function static_elements(coeff::ScaledIdentity, d::Int)
     Tuple{Int,Int,Any}[(α, α, scalar) for α = 1:d]
 end
 
-# Kernel expressions for the wrapped source cell of a forward bond with
-# displacement `a`, evaluated at the loop (output) cell `n1, ..., nd`.
+# Kernel expressions for the wrapped anchor cell of a reverse bond with
+# forward displacement `a`, evaluated at the reverse bond's source cell
+# `n1, ..., nd` (the forward bond's target): its callback reads at n - a.
 function shifted_site_args(a::NTuple{LD,Int}) where {LD}
     map(1:LD) do j
         hop = a[j]
@@ -217,10 +217,10 @@ function fill_local_caches!(
         source = Tuple(cell)
         target = mod1.(source .+ a, L)
         for ((α, β), cache) in forward
-            store_cache_value!(cache, target, raw[α, β, source...], term_description)
+            store_cache_value!(cache, source, raw[α, β, source...], term_description)
         end
         for ((α, β), cache) in reverse
-            store_cache_value!(cache, source, conj(raw[α, β, source...]), term_description)
+            store_cache_value!(cache, target, conj(raw[α, β, source...]), term_description)
         end
     end
     nothing
@@ -293,8 +293,8 @@ function lower(
     for (index, term) in enumerate(model.terms)
         coeff = term.coefficient
         a = term.displacement
-        key_forward = -LatticeVector{LD}(a)
-        key_reverse = LatticeVector{LD}(a)
+        key_forward = LatticeVector{LD}(a)
+        key_reverse = -LatticeVector{LD}(a)
         plus_hc = term.adjoint_policy isa PlusHermitianConjugate
         is_onsite = term.kind === :onsite
 
@@ -302,10 +302,10 @@ function lower(
             if is_onsite && α == β
                 add_diagonal!(Vacc, α, forward_value)
             else
-                add_entry!(acc, key_forward, β, α, forward_value)
+                add_entry!(acc, key_forward, α, β, forward_value)
             end
             if plus_hc
-                add_entry!(acc, key_reverse, α, β, reverse_value)
+                add_entry!(acc, key_reverse, β, α, reverse_value)
             end
             nothing
         end
@@ -372,14 +372,14 @@ function lower(
                 plain = plain_site_args(LD)
                 for β = 1:d, α = 1:d
                     forward = if d == 1
-                        :($name($(shifted...)))
+                        :($name($(plain...)))
                     else
-                        :(($name($(shifted...)))[$α, $β])
+                        :(($name($(plain...)))[$α, $β])
                     end
                     reverse = if d == 1
-                        :(conj($name($(plain...))))
+                        :(conj($name($(shifted...))))
                     else
-                        :(conj(($name($(plain...)))[$α, $β]))
+                        :(conj(($name($(shifted...)))[$α, $β]))
                     end
                     emit!(α, β, forward, reverse)
                 end
