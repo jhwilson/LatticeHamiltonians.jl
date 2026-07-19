@@ -39,11 +39,27 @@ Create a `LatticeHamiltonian` from a `HamiltonianBuilder`.
 function build(
     builder::HamiltonianBuilder{real_dim,lattice_dim},
 ) where {real_dim,lattice_dim}
-    # Real space structure
-    A = SMatrix{lattice_dim,lattice_dim,Float64}(I) #TODO
-    B = SMatrix{lattice_dim,lattice_dim,Float64}(I * 2 * pi) #TODO
-    r = fill(SVector{lattice_dim}(zeros(Float64, lattice_dim)), builder.d) #TODO
+    # Placeholder geometry for the macro path, which has no Lattice input.
+    A = SMatrix{lattice_dim,lattice_dim,Float64}(I)
+    B = SMatrix{lattice_dim,lattice_dim,Float64}(I * 2 * pi)
+    r = fill(SVector{lattice_dim}(zeros(Float64, lattice_dim)), builder.d)
 
+    build(builder, A, B, r)
+end
+
+"""
+    build(builder::HamiltonianBuilder, A, B, r; meta = nothing)
+
+Compile a `HamiltonianBuilder` with explicit geometry: `A`/`B` the primitive
+and reciprocal vector matrices, `r` the per-orbital positions.
+"""
+function build(
+    builder::HamiltonianBuilder,
+    A::SMatrix,
+    B::SMatrix,
+    r::Vector{<:SVector};
+    meta = nothing,
+)
     LatticeHamiltonian(
         A,
         B,
@@ -54,5 +70,6 @@ function build(
         r,
         eval(make_apply(builder)),
         eval(make_sparse(builder)),
+        meta,
     )
 end

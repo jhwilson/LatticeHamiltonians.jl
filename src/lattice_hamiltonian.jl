@@ -20,6 +20,8 @@ Instead, for construction of the Hamiltonian, see the `@lattice_hamiltonian` mac
   - `r::Vector{SVector{real_dim,Float64}}`: Real-space coordinates of orbitals within a unit cell
   - `apply!::F`: Function that applies the Hamiltonian to an input wavefunction
   - `sparse::S`: Function that constructs the sparse matrix representation of the Hamiltonian
+  - `meta::Any`: Build metadata (`nothing` for macro-built Hamiltonians; a
+    `Realization` for Hamiltonians built from a `HamiltonianModel`)
 """
 struct LatticeHamiltonian{real_dim,lattice_dim,F,S}
     A::SMatrix{real_dim,lattice_dim,Float64}
@@ -31,7 +33,11 @@ struct LatticeHamiltonian{real_dim,lattice_dim,F,S}
     r::Vector{SVector{real_dim,Float64}}
     apply!::F
     sparse::S
+    meta::Any
 end
+
+LatticeHamiltonian(A, B, d, L, params, fields, r, apply!, sparse) =
+    LatticeHamiltonian(A, B, d, L, params, fields, r, apply!, sparse, nothing)
 
 """
     lattice_hamiltonian(input)
