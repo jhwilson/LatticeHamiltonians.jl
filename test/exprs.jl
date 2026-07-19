@@ -59,6 +59,18 @@ EXPR_TEST_FIELD = [1.0, 2.0]
             Dict{Symbol,ComplexF64}(),
             fieldnames,
         ) == :(f(2))
+        # parameters inside field indices become integer-converted lookups;
+        # inside field-call arguments they stay ComplexF64 lookups
+        @test symbols_to_lookups(
+            :(W[mod1(n1 + shift, L[1])]),
+            Dict{Symbol,ComplexF64}(:shift => 1),
+            fieldnames,
+        ) == :(W[mod1(n1 + Base.Int(Base.real(params[:shift])), L[1])])
+        @test symbols_to_lookups(
+            :(f(n1, scale)),
+            Dict{Symbol,ComplexF64}(:scale => 2),
+            fieldnames,
+        ) == :(f(n1, params[:scale]))
     end
 
     @testset "field validation" begin

@@ -53,13 +53,13 @@ function parse_lattice_dsl(input, mod::Module)
             name = ex.args[1]
             name isa Symbol || error("Invalid assignment name $name in lattice DSL.")
             value = Core.eval(mod, ex.args[2])
+            (haskey(params, name) || haskey(fields, name)) && error(
+                "Name $name is assigned twice in the lattice DSL; " *
+                "assign each parameter or field once.",
+            )
             if value isa Number
-                haskey(fields, name) &&
-                    error("Field name $name collides with a parameter name.")
                 params[name] = ComplexF64(value)
             else
-                haskey(params, name) &&
-                    error("Field name $name collides with a parameter name.")
                 fields[name] = value
             end
         end
@@ -126,6 +126,11 @@ function validate_field_names(fieldnames, dim)
             :jvals,
             :hvals,
             :im,
+            :nz,
+            :matrix_size,
+            # module prefixes of qualified calls in generated code
+            :Base,
+            :SparseArrays,
             [site_loop_var(j) for j = 1:dim]...,
             [dim_span_var(j) for j = 1:dim]...,
         ],
@@ -348,13 +353,44 @@ function symbols_to_lookups(
         return expr
     elseif expr.head == :ref
         array = symbols_to_lookups(expr.args[1], params, fieldnames)
-        return Expr(:ref, array, expr.args[2:end]...)
+        indices = [rewrite_params(i, params; index = true) for i in expr.args[2:end]]
+        return Expr(:ref, array, indices...)
     elseif expr.head == :call && expr.args[1] isa Symbol && expr.args[1] in fieldnames
-        return expr
+        arguments = [rewrite_params(a, params; index = false) for a in expr.args[2:end]]
+        return Expr(:call, expr.args[1], arguments...)
     end
 
     converted_args = [symbols_to_lookups(arg, params, fieldnames) for arg in expr.args]
     Expr(expr.head, converted_args...)
+end
+
+"""
+    rewrite_params(expr, params; index)
+
+Rewrite parameter symbols inside a field index or field-call argument as
+`params` lookups, leaving literal numbers untouched (unlike the matrix-element
+path, which folds them to `ComplexF64`). With `index = true` the lookup is
+converted with `Int(real(...))`, since parameters are stored as `ComplexF64`
+but array indices must be integers; non-integer values throw `InexactError`
+at application. Indices of any nested array reference are always rewritten in
+index mode.
+"""
+function rewrite_params(expr, params::Dict{Symbol,ComplexF64}; index::Bool)
+    if expr isa Symbol
+        haskey(params, expr) || return expr
+        lookup = :(params[$(QuoteNode(expr))])
+        return index ? :(Base.Int(Base.real($lookup))) : lookup
+    elseif expr isa Expr && expr.head == :ref
+        array = rewrite_params(expr.args[1], params; index = false)
+        indices = [rewrite_params(i, params; index = true) for i in expr.args[2:end]]
+        return Expr(:ref, array, indices...)
+    elseif expr isa Expr
+        return Expr(
+            expr.head,
+            (rewrite_params(arg, params; index = index) for arg in expr.args)...,
+        )
+    end
+    expr
 end
 
 """

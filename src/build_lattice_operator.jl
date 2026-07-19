@@ -104,7 +104,7 @@ function hoist_matrix_elements(V, T, dim)
                 binding = Symbol("_h$binding_index")
             end
             push!(source_symbols, binding)
-            push!(bindings, :($binding::ComplexF64 = $value))
+            push!(bindings, :($binding::Base.ComplexF64 = $value))
             binding
         end
     end
@@ -129,7 +129,7 @@ If `h` is a number, it is returned as a constant.
 If `h` is a symbol, it is looked up from the `params` dictionary.
 """
 matrix_element(h::Function; site) = :($(h$(site...)))
-matrix_element(h::ComplexF64; site) = h == zero(ComplexF64) ? :() : h
+matrix_element(h::ComplexF64; site) = h == Base.zero(Base.ComplexF64) ? :() : h
 matrix_element(h; site) = h
 
 """
@@ -160,7 +160,7 @@ sparse_diag_expr(V, i::Int) = sparse_hop_expr(V, :(i_out + $i), :(i_out + $i))
 function diag_expr(V, i::Int; site)
     m_el = matrix_element(V; site = site)
     if m_el == :()
-        :(ψout[i_out+$i] = zero(ComplexF64))
+        :(ψout[i_out+$i] = Base.zero(Base.ComplexF64))
     else
         :(ψout[i_out+$i] = $m_el * ψin[i_out+$i])
     end
@@ -379,7 +379,7 @@ function ham_expr(V, T, dim; sparse = false)
     # as it is responsible for zeroing out the output vector
     expr_V = make_diag_expr(V, dim; sparse = sparse)
     expr_diag = if !sparse && all(V -> V isa ComplexF64 && iszero(V), V)
-        :(fill!(ψout, zero(ComplexF64)))
+        :(Base.fill!(ψout, Base.zero(Base.ComplexF64)))
     else
         loop_sites(dim, expr_V)
     end
@@ -523,10 +523,10 @@ function fused_site_expr(V, T, dim; boundary, real_values = false)
         accumulator = Symbol("_acc$orbital")
         diagonal = matrix_element(V[orbital]; site = site)
         if diagonal == :()
-            push!(statements, :($accumulator = zero(ComplexF64)))
+            push!(statements, :($accumulator = Base.zero(Base.ComplexF64)))
         else
             product = if real_values
-                :(real($diagonal) * ψin[i+$orbital])
+                :(Base.real($diagonal) * ψin[i+$orbital])
             else
                 :($diagonal * ψin[i+$orbital])
             end
@@ -553,7 +553,7 @@ function fused_site_expr(V, T, dim; boundary, real_values = false)
                 matrix_value = matrix_element(value; site = input_site)
                 matrix_value == :() && continue
                 product = if real_values
-                    :(real($matrix_value) * ψin[$input_index+$row])
+                    :(Base.real($matrix_value) * ψin[$input_index+$row])
                 else
                     :($matrix_value * ψin[$input_index+$row])
                 end
@@ -630,7 +630,7 @@ function loop_fused_boundary_slab(V, T, dim, slab_axis)
     ranges[slab_axis] = :(1:($(lower_vars[slab_axis])-1))
     low_slab = loop_region(ranges, body)
     ranges[slab_axis] =
-        :(max($(upper_vars[slab_axis])+1, $(lower_vars[slab_axis])):L[$slab_axis])
+        :(Base.max($(upper_vars[slab_axis])+1, $(lower_vars[slab_axis])):L[$slab_axis])
     high_slab = loop_region(ranges, body)
     Expr(:block, low_slab, high_slab)
 end
@@ -676,7 +676,7 @@ function all_real_matrix_elements(V, T, field_types::Dict{Symbol,DataType})
         if value isa ComplexF64
             isreal(value) || return false
         elseif value isa Symbol
-            push!(checks, :(isreal($value)))
+            push!(checks, :(Base.isreal($value)))
         elseif provably_real(value, field_types)
             continue
         else
@@ -754,7 +754,7 @@ function hop_extent_guard(T, dim)
         (hop, axis) in seen && continue
         push!(seen, (hop, axis))
         message = "hopping displacement of magnitude $hop exceeds the lattice extent along dimension $axis; rebuild the Hamiltonian for this lattice size"
-        push!(checks, :($hop <= L[$axis] || throw(ArgumentError($message))))
+        push!(checks, :($hop <= L[$axis] || Base.throw(Base.ArgumentError($message))))
     end
     Expr(:block, checks...)
 end
@@ -762,9 +762,11 @@ end
 """
     field_prelude(fields, V, T, dim)
 
-Bind declared fields to type-asserted locals and validate direct site-coordinate
-indexing. Computed indices are used under `@inbounds` and remain the user's
-responsibility.
+Bind declared fields to type-asserted locals and validate field indexing: every
+index position holding a bare site coordinate must cover `1:L[axis]`, and every
+literal index must exist, in that dimension's `axes` (not just `size`, so
+offset-axed arrays are rejected instead of silently misread). Computed indices
+are used under `@inbounds` and remain the user's responsibility.
 """
 function field_prelude(fields::Dict{Symbol,Any}, V, T, dim)
     expressions = Expr[]
@@ -774,19 +776,19 @@ function field_prelude(fields::Dict{Symbol,Any}, V, T, dim)
         push!(expressions, :($name = (fields[$(QuoteNode(name))])::$field_type))
     end
 
-    guards = Set{Tuple{Symbol,Int,Int}}()
+    # guard = (field, index dimension, :site => lattice axis | :literal => index)
+    guards = Set{Tuple{Symbol,Int,Symbol,Int}}()
     site_variables = Dict(site_loop_var(axis) => axis for axis = 1:dim)
     function collect_guards!(value)
         value isa Expr || return
-        if value.head == :ref && value.args[1] isa Symbol &&
-           value.args[1] in fieldnames &&
-           all(
-               index -> index isa Symbol && haskey(site_variables, index),
-               value.args[2:end],
-           )
+        if value.head == :ref && value.args[1] isa Symbol && value.args[1] in fieldnames
             field = value.args[1]
             for (index_dimension, index) in enumerate(value.args[2:end])
-                push!(guards, (field, index_dimension, site_variables[index]))
+                if index isa Symbol && haskey(site_variables, index)
+                    push!(guards, (field, index_dimension, :site, site_variables[index]))
+                elseif index isa Int
+                    push!(guards, (field, index_dimension, :literal, index))
+                end
             end
         end
         foreach(collect_guards!, value.args)
@@ -795,13 +797,17 @@ function field_prelude(fields::Dict{Symbol,Any}, V, T, dim)
     for (_, (_, _, values)) in T
         foreach(collect_guards!, values)
     end
-    for (field, field_dimension, lattice_dimension) in sort!(collect(guards))
-        message = "field $field is too small along dimension $field_dimension"
-        push!(
-            expressions,
-            :(size($field, $field_dimension) >= L[$lattice_dimension] ||
-              throw(DimensionMismatch($message))),
-        )
+    for (field, index_dimension, kind, payload) in sort!(collect(guards))
+        guard = if kind == :site
+            message = "field $field must cover sites 1:L[$payload] along its dimension $index_dimension"
+            :(Base.issubset(1:L[$payload], Base.axes($field, $index_dimension)) ||
+              Base.throw(Base.DimensionMismatch($message)))
+        else
+            message = "field $field has no index $payload along its dimension $index_dimension"
+            :(Base.in($payload, Base.axes($field, $index_dimension)) ||
+              Base.throw(Base.DimensionMismatch($message)))
+        end
+        push!(expressions, guard)
     end
     Expr(:block, expressions...)
 end
@@ -827,8 +833,8 @@ function make_apply(V, T, dim, fields::Dict{Symbol,Any} = Dict{Symbol,Any}())
             params::Dict{Symbol,ComplexF64},
             fields::Dict{Symbol,Any},
         )
-            length(ψout) == d * prod(L) && length(ψin) == d * prod(L) ||
-                throw(DimensionMismatch("input and output vectors must both have length d * prod(L)"))
+            Base.length(ψout) == d * Base.prod(L) && Base.length(ψin) == d * Base.prod(L) ||
+                Base.throw(Base.DimensionMismatch("input and output vectors must both have length d * prod(L)"))
             $(hop_extent_guard(T2, dim))
             # The arguments of the function are used implicitly
             # in the generated expressions
@@ -869,11 +875,11 @@ function make_sparse(V, T, dim, fields::Dict{Symbol,Any} = Dict{Symbol,Any}())
             $(hop_extent_guard(T2, dim))
             $prelude
             $bindings
-            nz = $per_cell_count * prod(L)
-            matrix_size = d * prod(L)
+            nz = $per_cell_count * Base.prod(L)
+            matrix_size = d * Base.prod(L)
 
-            ivals = Array{Int64}(undef, nz)
-            jvals = Array{Int64}(undef, nz)
+            ivals = Base.Array{Base.Int64}(Base.undef, nz)
+            jvals = Base.Array{Base.Int64}(Base.undef, nz)
             hvals = Array{ComplexF64}(undef, nz)
 
             idx = 1
@@ -882,7 +888,7 @@ function make_sparse(V, T, dim, fields::Dict{Symbol,Any} = Dict{Symbol,Any}())
             end
             idx -= 1
 
-            dropzeros!(
+            SparseArrays.dropzeros!(
                 SparseArrays.sparse(
                     ivals[1:idx],
                     jvals[1:idx],
