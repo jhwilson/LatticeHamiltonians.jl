@@ -23,12 +23,15 @@ A vector of integers that describes a lattice vector in a `lattice_dim` dimensio
 LatticeVector{lattice_dim} = SVector{lattice_dim,Int64}
 onsite(lattice_dim) = LatticeVector{lattice_dim}(zeros(Int, lattice_dim))
 
-function parse_lattice_dsl(input)
+parse_lattice_dsl(input) = parse_lattice_dsl(input, LatticeHamiltonians)
+
+function parse_lattice_dsl(input, mod::Module)
     exprL = :()
     exprV = :()
     exprd = :()
     hops = Vector{Expr}()  # Store all hopping expressions in a vector
     params = Dict{Symbol,ComplexF64}() #Initialize dictionary
+    fields = Dict{Symbol,Any}()
 
     for ex in input.args # loops over exprL/O/hops/params
         # skip any expressions that don't have an args list
@@ -47,9 +50,18 @@ function parse_lattice_dsl(input)
               push!(hops, ex)  # Add hopping expression to the vector
             end
         elseif ex.head == :(=)
-            param_key = ex.args[1]
-            param_val = eval(ex.args[2])
-            params[param_key] = param_val #adds it to the dictionary
+            name = ex.args[1]
+            name isa Symbol || error("Invalid assignment name $name in lattice DSL.")
+            value = Core.eval(mod, ex.args[2])
+            (haskey(params, name) || haskey(fields, name)) && error(
+                "Name $name is assigned twice in the lattice DSL; " *
+                "assign each parameter or field once.",
+            )
+            if value isa Number
+                params[name] = ComplexF64(value)
+            else
+                fields[name] = value
+            end
         end
     end
 
@@ -66,26 +78,69 @@ function parse_lattice_dsl(input)
 
     lattice_dim = length(L)
     L = MVector{lattice_dim,Int64}(L)
+    validate_field_names(keys(fields), lattice_dim)
     if isempty(hops)
         error("Invalid input. Expected at least one hopping expression.")
     end
 
+    fieldnames = Set{Symbol}(keys(fields))
 
     # Hamiltonian matrix elements
     T = Dict{LatticeVector{lattice_dim},SparseEntry{LiteralOrSymbolic}}()
     for hop in hops
-        key, entry = parse_hopping(hop, params)
+        key, entry = parse_hopping(hop, params, fieldnames)
         merge_hopping!(T, fold_hopping(key, L, lattice_dim), entry)
     end
     d = orbital_dim(T)
 
     # Extract the onsite potential and hopping
-    V, onsite_hops = extract_potential(exprV, dim, d, params)
+    V, onsite_hops = extract_potential(exprV, dim, d, params, fieldnames)
     if onsite_hops !== nothing
       merge_hopping!(T, onsite(lattice_dim), onsite_hops)
     end
 
-    HamiltonianBuilder{lattice_dim, lattice_dim}(;params=params, L=L, V=V, T=T, d=d)
+    HamiltonianBuilder{lattice_dim,lattice_dim}(;
+        params = params,
+        fields = fields,
+        L = L,
+        V = V,
+        T = T,
+        d = d,
+    )
+end
+
+function validate_field_names(fieldnames, dim)
+    reserved = Set{Symbol}(
+        [
+            :L,
+            :d,
+            :params,
+            :fields,
+            :ψin,
+            :ψout,
+            :i,
+            :idx,
+            :i_in,
+            :i_out,
+            :ivals,
+            :jvals,
+            :hvals,
+            :im,
+            :nz,
+            :matrix_size,
+            # module prefixes of qualified calls in generated code
+            :Base,
+            :SparseArrays,
+            [site_loop_var(j) for j = 1:dim]...,
+            [dim_span_var(j) for j = 1:dim]...,
+        ],
+    )
+    prefixes = ("_h", "_acc", "_lo", "_hi", "_hoff", "_iin", "_m")
+    for name in fieldnames
+        if name in reserved || any(prefix -> startswith(String(name), prefix), prefixes)
+            error("Field name $name is reserved by generated lattice Hamiltonian code.")
+        end
+    end
 end
 
 """
@@ -175,7 +230,13 @@ If there is no non-zero onsite hopping, `hop=nothing`, otherwise `hop` is a `Tup
 extract_potential(:([Δ t; t -Δ], 1, 2, Dict{Symbol,ComplexF64}(:Δ => 1.0))
 ```
 """
-function extract_potential(exprV::Expr, dim::Int, d::Int, params::Dict{Symbol,ComplexF64})
+function extract_potential(
+    exprV::Expr,
+    dim::Int,
+    d::Int,
+    params::Dict{Symbol,ComplexF64},
+    fieldnames::Set{Symbol} = Set{Symbol}(),
+)
   # on site hoppings
   orows = Int[]
   ocols = Int[]
@@ -190,7 +251,7 @@ function extract_potential(exprV::Expr, dim::Int, d::Int, params::Dict{Symbol,Co
     return V, nothing
   end
 
-  pair = parse_hopping(exprV, params)
+  pair = parse_hopping(exprV, params, fieldnames)
   (rows, cols, values) = pair.second
 
   # seperate the diagonal and off-diagonal elements
@@ -225,7 +286,11 @@ and `rows`, `cols`, and `values` are vectors that describe the non-zero elements
 
 The hopping matrix itself may be a singleton, a matrix literal, or a tuple of vectors `(rows, cols, values)`.
 """
-function parse_hopping(hop::Expr, params::Dict{Symbol,ComplexF64})
+function parse_hopping(
+    hop::Expr,
+    params::Dict{Symbol,ComplexF64},
+    fieldnames::Set{Symbol} = Set{Symbol}(),
+)
     Base.remove_linenums!(hop)
 
     lhs = hop.args[1]
@@ -243,7 +308,15 @@ function parse_hopping(hop::Expr, params::Dict{Symbol,ComplexF64})
 
     # replace parameter symbols in the hoppings with
     # with lookups in the the parameter dictionary
-    values = LiteralOrSymbolic[symbols_to_lookups(v, params) for v in values]
+    for value in values
+        value isa Symbol && value in fieldnames && error(
+            "Field $value cannot be used as a bare matrix element; " *
+            "index it, for example $value[n1].",
+        )
+    end
+    values = LiteralOrSymbolic[
+        symbols_to_lookups(value, params, fieldnames) for value in values
+    ]
 
     key = if lhs isa Integer
         [lhs]
@@ -264,16 +337,60 @@ Attempts to convert terms to a canonical form:
   - All symbols that are keys in `params` are converted to lookups, i.e. `t1` becomes `params[:t1]`.
   - Everything else is left as is.
 """
-function symbols_to_lookups(expr, params::Dict{Symbol,ComplexF64})
-    MacroTools.postwalk(function (x)
-        if isexpr(x, Number)
-            ComplexF64(x)
-        elseif haskey(params, x)
-            :(params[$(QuoteNode(x))])
-        else
-            x
-        end
-    end, expr)
+symbols_to_lookups(expr, params::Dict{Symbol,ComplexF64}) =
+    symbols_to_lookups(expr, params, Set{Symbol}())
+
+function symbols_to_lookups(
+    expr,
+    params::Dict{Symbol,ComplexF64},
+    fieldnames::Set{Symbol},
+)
+    if expr isa Number
+        return ComplexF64(expr)
+    elseif expr isa Symbol
+        return haskey(params, expr) ? :(params[$(QuoteNode(expr))]) : expr
+    elseif !(expr isa Expr)
+        return expr
+    elseif expr.head == :ref
+        array = symbols_to_lookups(expr.args[1], params, fieldnames)
+        indices = [rewrite_params(i, params; index = true) for i in expr.args[2:end]]
+        return Expr(:ref, array, indices...)
+    elseif expr.head == :call && expr.args[1] isa Symbol && expr.args[1] in fieldnames
+        arguments = [rewrite_params(a, params; index = false) for a in expr.args[2:end]]
+        return Expr(:call, expr.args[1], arguments...)
+    end
+
+    converted_args = [symbols_to_lookups(arg, params, fieldnames) for arg in expr.args]
+    Expr(expr.head, converted_args...)
+end
+
+"""
+    rewrite_params(expr, params; index)
+
+Rewrite parameter symbols inside a field index or field-call argument as
+`params` lookups, leaving literal numbers untouched (unlike the matrix-element
+path, which folds them to `ComplexF64`). With `index = true` the lookup is
+converted with `Int(real(...))`, since parameters are stored as `ComplexF64`
+but array indices must be integers; non-integer values throw `InexactError`
+at application. Indices of any nested array reference are always rewritten in
+index mode.
+"""
+function rewrite_params(expr, params::Dict{Symbol,ComplexF64}; index::Bool)
+    if expr isa Symbol
+        haskey(params, expr) || return expr
+        lookup = :(params[$(QuoteNode(expr))])
+        return index ? :(Base.Int(Base.real($lookup))) : lookup
+    elseif expr isa Expr && expr.head == :ref
+        array = rewrite_params(expr.args[1], params; index = false)
+        indices = [rewrite_params(i, params; index = true) for i in expr.args[2:end]]
+        return Expr(:ref, array, indices...)
+    elseif expr isa Expr
+        return Expr(
+            expr.head,
+            (rewrite_params(arg, params; index = index) for arg in expr.args)...,
+        )
+    end
+    expr
 end
 
 """

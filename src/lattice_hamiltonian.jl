@@ -16,6 +16,7 @@ Instead, for construction of the Hamiltonian, see the `@lattice_hamiltonian` mac
   - `d::Int`: Number of orbitals per site
   - `L::MVector{lattice_dim,Int}`: System size
   - `params::Dict{Symbol,ComplexF64}`: Parameters for potential and hopping functions
+  - `fields::Dict{Symbol,Any}`: Site-dependent matrix-element data and functions
   - `r::Vector{SVector{real_dim,Float64}}`: Real-space coordinates of orbitals within a unit cell
   - `apply!::F`: Function that applies the Hamiltonian to an input wavefunction
   - `sparse::S`: Function that constructs the sparse matrix representation of the Hamiltonian
@@ -26,6 +27,7 @@ struct LatticeHamiltonian{real_dim,lattice_dim,F,S}
     d::Int
     L::MVector{lattice_dim,Int}
     params::Dict{Symbol,ComplexF64}
+    fields::Dict{Symbol,Any}
     r::Vector{SVector{real_dim,Float64}}
     apply!::F
     sparse::S
@@ -35,7 +37,6 @@ end
     lattice_hamiltonian(input)
 
 Define a Hamiltonian using a convenient mini domain specific language (described below).
-The user can provide an expression that defines the parameters for the potential and hopping terms (params, V, T, L).
 The macro generates code that constructs a `LatticeHamiltonian` object and a function to apply the Hamiltonian.
 
 # Domain Specific Language
@@ -46,10 +47,20 @@ It expects the following types of expressions, supplied in any order.
   - **REQUIRED** `L = [L1, L2, ...]`: A vector of integers, of length `lattice_dim` that define the size of the system.
     The length of this vector defines the dimensionality of the system.
     And each entry is the the number of unit cells in that direction.
-  - **REQUIRED** `V = [V1, V2, ...]`: A vector of numbers of length `d`, that define the on-site potential
-    for each orbital within a unit cell.
-  - Expressions of the orm `(δ1, δ2, ...) -> T`, with `δi` integers and `T` a \\(d\\times d\\) matrix:
-    The hopping matrix for to hop by `(δ1, δ2, ...)` unit cells.
+  - **REQUIRED** Hopping expressions of the form `(δ1, δ2, ...) -> M`, with `δi` integers and `M` a \\(d\\times d\\) matrix
+    (a matrix literal, a scalar, or a `(rows, cols, vals)` tuple):
+    The hopping matrix for a hop by `(δ1, δ2, ...)` unit cells.
+    The onsite expression `(0, 0, ...) -> M` doubles as the potential:
+    the diagonal of `M` is the per-orbital on-site potential, and off-diagonal
+    entries become an on-site orbital hopping.
+  - Assignments `name = value`, evaluated in the calling module at macro expansion time.
+    A `Number` value declares an adjustable scalar parameter, stored in `H.params`
+    (mutating `H.params[:t]` changes the Hamiltonian without recompiling).
+    Any other value (an array, a function, ...) declares a *field*, stored in `H.fields`;
+    matrix elements may reference fields using the site coordinates `n1, n2, ...`
+    of the destination unit cell — e.g. `W[n1]` or `f(n1, n2)` — to build
+    site-dependent (e.g. disordered) Hamiltonians. See the tutorial for details
+    and conventions.
 
 # Examples
 
@@ -58,7 +69,6 @@ with 10 unit cells.
 
     H_ssh = @lattice_hamiltonian begin
         L = [10]
-        V = [0.0, 0.0]
         (0) -> [0 t1
                 t1 0]
         (1) -> [0 t2
@@ -70,7 +80,7 @@ with 10 unit cells.
     end
 """
 macro lattice_hamiltonian(input)
-    builder = parse_lattice_dsl(input)
+    builder = parse_lattice_dsl(input, __module__)
     build(builder)
 end
 

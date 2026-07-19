@@ -18,6 +18,7 @@ Base.@kwdef struct HamiltonianBuilder{real_dim,lattice_dim}
     d::Int
     L::MVector{lattice_dim,Int}
     params::Dict{Symbol,ComplexF64}
+    fields::Dict{Symbol,Any} = Dict{Symbol,Any}()
 end
 
 """
@@ -27,7 +28,7 @@ Construct as `HamiltonianBuilder` using the same DSL as
 [`@lattice_hamiltonian`](@ref).
 """
 macro builder(input)
-    parse_lattice_dsl(input)
+    parse_lattice_dsl(input, __module__)
 end
 
 """
@@ -49,6 +50,7 @@ function build(
         builder.d,
         builder.L,
         builder.params,
+        builder.fields,
         r,
         eval(make_apply(builder)),
         eval(make_sparse(builder)),
