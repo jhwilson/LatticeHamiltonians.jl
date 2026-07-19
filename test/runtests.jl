@@ -10,6 +10,8 @@ include("wavefunction_helpers.jl")
 @testset "LatticeHamiltonians.jl" verbose = true begin
     @testset "Unit tests" begin
         include("exprs.jl")
+        include("frontend_types.jl")
+        include("frontend_lowering.jl")
     end
 
     @testset "Integration Tests" begin
@@ -20,5 +22,13 @@ include("wavefunction_helpers.jl")
         include("hop_folding.jl")
         include("parameter_mutability.jl")
         include("linear_algebra.jl")
+        include("frontend_models.jl")
+        include("frontend_local.jl")
+        include("frontend_geometry.jl")
+        include("function_local_build.jl")
+    end
+
+    @testset "Precompilation" begin
+        include("precompile_downstream.jl")
     end
 end

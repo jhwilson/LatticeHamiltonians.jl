@@ -5,6 +5,7 @@ Pages = ["tutorial.md"]
 # Lattice Hamiltonians Tutorial
 
 The main entry point for users of the `LatticeHamiltonians` package is the `@lattice_hamiltonian` macro.
+A newer function-based interface — the [model builder](@ref builder-interface) — separates lattice geometry, model physics, and the finite realization; both produce the same compiled operators.
 
 We will work through a few examples of how to use this macro to build Hamiltonians and hen how to use the resulting Hamiltonians to do calculations.
 
@@ -380,3 +381,222 @@ where ``\hat{A}`` is the matrix with the lattice vectors as its columns.
 ``LatticeHamiltonians`` provides this matrix as the ``A`` field of the Hamiltonian.
 Additionally, the sublattice sites have their own offset within the unit cell, which is given by the ``r`` field of the Hamiltonian:
 in general, the offset of orbital ``l`` in unit cell is given by ``H.r[l]``.
+
+## [The model builder interface](@id builder-interface)
+
+The builder interface constructs Hamiltonians with ordinary function calls
+instead of a macro. It separates four ideas that the macro combines: a
+[`Lattice`](@ref) (geometry), a `HamiltonianModel` (the infinite-lattice
+physics, from [`hamiltonian`](@ref)), the finite realization (size, parameter
+values, and disorder, supplied to [`build`](@ref)), and the compiled
+[`LatticeHamiltonian`](@ref). A model is declared once and can be rebuilt at
+many sizes or with many disorder realizations.
+
+### A periodic chain
+
+Every term is a *directed* bond sum
+
+```math
+H_a = \sum_n c^\dagger_{n+a}\, M\, c_n ,
+```
+
+where `n` is the source unit cell, `n + a` the target, and — for
+multi-orbital models — row ``\alpha`` of `M` is the target (creation)
+orbital and column ``\beta`` the source (annihilation) orbital, so
+``M_{\alpha\beta}`` multiplies ``c^\dagger_{n+a,\alpha} c_{n,\beta}``.
+Nothing is added implicitly: `plus_hc = true` requests the Hermitian
+conjugate of the exact written term.
+
+```@example builder
+using LatticeHamiltonians
+
+chain = Lattice(reshape([1.0], 1, 1))   # one primitive vector, one orbital
+
+model = hamiltonian(chain; parameters = (t = 1.0, μ = 0.0)) do h, p
+    onsite!(h, -p.μ)
+    hopping!(h, (1,), -p.t; plus_hc = true, label = :nearest_neighbor)
+end
+
+describe(model)
+```
+
+`p` is a checked namespace of *parameter references*: `-p.t` builds a small
+symbolic expression that is compiled into the kernel as a runtime parameter
+lookup, so parameters stay adjustable without recompiling. `build` realizes
+the model at a finite size with periodic boundaries:
+
+```@example builder
+H = build(model, (100,))
+ψ = randn(ComplexF64, 100)
+H * ψ ≈ LatticeHamiltonians.sparse(H) * ψ
+```
+
+Parameters are updated through a checked setter (which also keeps any
+precomputed caches consistent — see below), or overridden at build time:
+
+```@example builder
+set_parameter!(H; t = 1.2, μ = -0.1)
+parameters(H)
+```
+
+!!! note "`build` works anywhere"
+    `build` compiles its kernels as runtime-generated functions
+    (RuntimeGeneratedFunctions.jl), so the returned Hamiltonian is
+    immediately usable — including inside the function that called `build`.
+    One caveat for packages that precompile: create Hamiltonians at runtime
+    (inside functions, or in `__init__`) rather than storing a built
+    Hamiltonian in a top-level `const` baked into the precompile image;
+    store the *model* instead and build from it at runtime.
+
+### Multi-orbital models: the SSH chain
+
+The lattice owns the orbital names and their positions inside the unit cell,
+so orbital dimension is declared, not inferred:
+
+```@example builder
+ssh = Lattice(
+    reshape([1.0], 1, 1);
+    orbitals = (:A, :B),
+    positions = ([0.0], [0.5]),
+)
+
+ssh_model = hamiltonian(ssh; parameters = (t1 = 1.0, t2 = 2.0)) do h, p
+    hopping!(h, (0,), [0 p.t1; 0 0]; plus_hc = true, label = :intracell)
+    hopping!(h, (1,), [0 p.t2; 0 0]; plus_hc = true, label = :intercell)
+end
+
+describe(ssh_model)
+```
+
+Read the intercell term with the stated convention: `M[1, 2] = t2` creates
+orbital `:A` in cell `n + 1` and annihilates `:B` in cell `n` — with the
+declared positions, the bond of length `1/2` the SSH model intends. The
+transposed matrix would produce the same spectrum here but the wrong
+real-space geometry the moment positions matter (Peierls phases,
+polarization). On a multi-orbital lattice a bare scalar coefficient is
+rejected as ambiguous; write a full matrix, or `coeff * I` for a multiple of
+the identity (e.g. `onsite!(h, -p.μ * I)`).
+
+The declared geometry lands on the built operator: `H.A` holds the primitive
+vectors and `H.r` the orbital positions.
+
+### Site- and bond-dependent physics
+
+Fields are declared as a schema on the model and supplied as concrete data at
+build time, so one model serves many disorder realizations. Site- or
+bond-dependent coefficients are do-block callbacks receiving a context and an
+environment with separate `parameters` and `fields` namespaces:
+
+```@example builder
+disorder_model = hamiltonian(
+    chain;
+    parameters = (t = 1.0,),
+    fields = (FieldSpec(:W; rank = 1, eltype = Float64),),
+) do h, p
+    hopping!(h, (1,), -p.t; plus_hc = true)
+    onsite!(h; depends_on = (:W,)) do site, env
+        env.fields.W[site.cell_index...]
+    end
+end
+
+W = 0.5 .* randn(100)
+H_dis = build(disorder_model, (100,); fields = (W = W,))
+nothing #hide
+```
+
+A bond callback receives a `BondContext` describing the *forward* bond: its
+`source_cell_index` (wrapped, 1-based, for array lookups), unwrapped
+`source_cell`/`target_cell` coordinates, and `crossed_boundary` winding
+counts. Geometry helpers `position(bond, Source(), :A)`,
+`displacement(bond, :A, :B)`, and `midpoint(bond, :A, :B)` use the declared
+lattice. With `plus_hc = true` the reverse bond reuses the forward callback
+(`M_{-a}(m) = M_a(m-a)^\dagger`), so bond disorder and Peierls phases never
+require manually shifted arrays:
+
+```@example builder
+peierls_model = hamiltonian(chain; parameters = (t = 1.0, A = 0.1)) do h, p
+    hopping!(h, (1,); plus_hc = true) do bond, env
+        x1 = position(bond, Source(), :orb)[1]
+        x2 = position(bond, Target(), :orb)[1]
+        -env.parameters.t * exp(im * real(env.parameters.A) * (x2 - x1))
+    end
+end
+H_peierls = build(peierls_model, (100,))
+nothing #hide
+```
+
+Swapping a disorder realization goes through a checked setter; replacing a
+field requires the same concrete type the kernel was compiled against:
+
+```@example builder
+set_field!(H_dis; W = 0.5 .* randn(100))
+nothing #hide
+```
+
+### Precomputed (materialized) coefficients
+
+A per-apply callback is re-evaluated for every site or bond on every
+`mul!` — flexible, but a real cost when an eigensolver performs thousands of
+matrix-vector products. `materialize = true` instead evaluates the callback
+once at build time into plain numeric arrays that the kernel reads directly
+(real-valued caches keep the fast real-arithmetic sweep, and `mul!` stays
+allocation-free):
+
+```@example builder
+fast_model = hamiltonian(
+    chain;
+    parameters = (t = 1.0,),
+    fields = (FieldSpec(:W; rank = 1, eltype = Float64),),
+) do h, p
+    hopping!(h, (1,), -p.t; plus_hc = true)
+    onsite!(h; materialize = true, depends_on = (:W,)) do site, env
+        env.fields.W[site.cell_index...]
+    end
+end
+H_fast = build(fast_model, (100,); fields = (W = W,))
+nothing #hide
+```
+
+The caches track their declared dependencies: `set_parameter!` and
+`set_field!` re-evaluate any cache whose `depends_on` names were mutated
+(with no `depends_on`, conservatively all parameters and fields). Mutating a
+field array *in place* is invisible to that tracking — call
+[`refresh_caches!`](@ref) afterwards:
+
+```@example builder
+fill!(fields(H_fast).W, 0.0)
+refresh_caches!(H_fast)
+nothing #hide
+```
+
+The memory cost is one array of `prod(L)` values per materialized nonzero
+orbital element per direction (twice that with `plus_hc`). Matrix-valued
+callbacks in per-apply mode are evaluated once per orbital pair per site, so
+`materialize = true` is the recommended mode for matrix-valued or expensive
+coefficients.
+
+### Validation and conventions
+
+`hamiltonian` validates eagerly: coefficient shapes, displacement lengths,
+reserved field names, and — since models declare `hermitian = true` by
+default — that static terms satisfy ``M(-a) = M(a)^\dagger`` at the default
+parameter values (callback terms get an advisory warning instead; check
+`ishermitian(Matrix(sparse(H)))` on a small system). Directed, non-Hermitian
+models must declare `hermitian = false`. A zero-displacement `plus_hc` term
+with a structurally nonzero diagonal is rejected — on the diagonal the bond
+is its own reverse, so `plus_hc` would double it; use `onsite!` with the
+complete matrix instead.
+
+To summarize the conventions:
+
+  - logical cells are zero-based coordinates `n` with physical position
+    ``r(n, \beta) = A n + \tau_\beta``; finite array indices (`cell_index`)
+    are 1-based;
+  - `hopping!(h, a, M)` adds ``\sum_n c^\dagger_{n+a,\alpha} M_{\alpha\beta}
+    c_{n,\beta}`` — rows create at the target, columns annihilate at the
+    source;
+  - `onsite!(h, M)` adds the complete zero-displacement matrix as written;
+  - `plus_hc = true` adds the adjoint of the exact written term, evaluating
+    position-dependent coefficients at their forward-bond anchor;
+  - `Periodic()` is the only boundary policy in this version (`Open` and
+    `Twisted` are declared but not yet supported by the compiled kernels).

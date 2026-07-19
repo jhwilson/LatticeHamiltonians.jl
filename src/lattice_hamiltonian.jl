@@ -20,6 +20,8 @@ Instead, for construction of the Hamiltonian, see the `@lattice_hamiltonian` mac
   - `r::Vector{SVector{real_dim,Float64}}`: Real-space coordinates of orbitals within a unit cell
   - `apply!::F`: Function that applies the Hamiltonian to an input wavefunction
   - `sparse::S`: Function that constructs the sparse matrix representation of the Hamiltonian
+  - `meta::Any`: Build metadata (`nothing` for macro-built Hamiltonians; a
+    `Realization` for Hamiltonians built from a `HamiltonianModel`)
 """
 struct LatticeHamiltonian{real_dim,lattice_dim,F,S}
     A::SMatrix{real_dim,lattice_dim,Float64}
@@ -31,7 +33,11 @@ struct LatticeHamiltonian{real_dim,lattice_dim,F,S}
     r::Vector{SVector{real_dim,Float64}}
     apply!::F
     sparse::S
+    meta::Any
 end
+
+LatticeHamiltonian(A, B, d, L, params, fields, r, apply!, sparse) =
+    LatticeHamiltonian(A, B, d, L, params, fields, r, apply!, sparse, nothing)
 
 """
     lattice_hamiltonian(input)
@@ -62,6 +68,19 @@ It expects the following types of expressions, supplied in any order.
     site-dependent (e.g. disordered) Hamiltonians. See the tutorial for details
     and conventions.
 
+The kernels are compiled as runtime-generated functions when the expanded
+code runs, so the macro result also works inside a function body: the
+Hamiltonian is immediately usable there, and each evaluation gets fresh
+`params` and `fields` *bindings* (mutating one `H.params` never affects a
+later build). Mutable field *values* — disorder arrays and the like — are
+shared across evaluations by design, so in-place mutation updates every
+Hamiltonian bound to them. Two restrictions remain: assignments (and `L`) are
+evaluated at macro-expansion time in the enclosing module's scope, so they
+cannot reference function-local variables — use the `hamiltonian` model
+frontend for runtime sizes, parameters, or fields — and each evaluation
+regenerates and hashes the kernel expressions (∼0.3 ms), so hoist the macro
+out of hot loops and mutate `H.params` instead of rebuilding.
+
 # Examples
 
 The following creates a Su-Schrieffer-Heeger (SSH) Hamiltonian on a 1D lattice,
@@ -80,8 +99,12 @@ with 10 unit cells.
     end
 """
 macro lattice_hamiltonian(input)
+    # Parse (and evaluate assignments) at expansion time, but build at
+    # runtime: kernels are runtime-generated functions, so the resulting
+    # Hamiltonian is immediately usable even inside the enclosing function,
+    # and each evaluation gets fresh params/fields via copy.
     builder = parse_lattice_dsl(input, __module__)
-    build(builder)
+    :($build($copy($builder)))
 end
 
 function sitenumber(r, H::LatticeHamiltonian)

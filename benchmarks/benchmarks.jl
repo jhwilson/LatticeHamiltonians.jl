@@ -96,6 +96,43 @@ H1d_fn = @lattice_hamiltonian begin
 end
 H1d_fn_sparse = sparse(H1d_fn)
 
+# Builder-frontend variants of the same models: parity with the macro path is
+# an acceptance gate for the frontend (its lowering must not cost speed).
+fe_ssh_lattice =
+    Lattice(reshape([1.0], 1, 1); orbitals = (:A, :B), positions = ([0.0], [0.5]))
+fe_ssh_model = hamiltonian(fe_ssh_lattice; parameters = (t1 = 1.0, t2 = 2.0)) do h, p
+    hopping!(h, (0,), [0 p.t1; 0 0]; plus_hc = true)
+    hopping!(h, (1,), [0 p.t2; 0 0]; plus_hc = true)
+end
+H1d_fe = build(fe_ssh_model, (10000,))
+H1d_fe_sparse = sparse(H1d_fe)
+
+fe_chain = Lattice(reshape([1.0], 1, 1))
+fe_anderson(materialize) = hamiltonian(
+    fe_chain;
+    parameters = (t = 1.0,),
+    fields = (FieldSpec(:W; rank = 1, eltype = Float64),),
+) do h, p
+    hopping!(h, (1,), -p.t; plus_hc = true)
+    onsite!(h; materialize = materialize, depends_on = (:W,)) do site, env
+        env.fields.W[site.cell_index...]
+    end
+end
+Wfe = randn(10000)
+H1d_fe_mat = build(fe_anderson(true), (10000,); fields = (W = Wfe,))
+H1d_fe_pa = build(fe_anderson(false), (10000,); fields = (W = Wfe,))
+H1d_fe_mat_sparse = sparse(H1d_fe_mat)
+
+fe_3d = Lattice(Matrix(1.0I, 3, 3); orbitals = (:A, :B))
+fe_3d_model = hamiltonian(fe_3d; parameters = (t = 1.0, Δ = 1.0, t2 = 0.3)) do h, p
+    onsite!(h, [0 p.Δ+3p.t; p.Δ+3p.t 0])
+    hopping!(h, (1, 0, 0), [0 -p.t; -p.t 0]; plus_hc = true)
+    hopping!(h, (0, 1, 0), [0 -p.t; -p.t 0]; plus_hc = true)
+    hopping!(h, (0, 0, 1), [0 -p.t-p.t2; -p.t+p.t2 0]; plus_hc = true)
+end
+H3d_fe = build(fe_3d_model, (20, 20, 20))
+H3d_fe_sparse = sparse(H3d_fe)
+
 # Define a benchmark suite
 
 SUITE = BenchmarkGroup()
@@ -120,6 +157,10 @@ for (case, Hmf, Hsp) in [
     ("1D Anderson", H1d_dis, H1d_dis_sparse),
     ("3D Anderson", H3d_dis, H3d_dis_sparse),
     ("1D function", H1d_fn, H1d_fn_sparse),
+    ("1D (frontend)", H1d_fe, H1d_fe_sparse),
+    ("1D Anderson (frontend, materialized)", H1d_fe_mat, H1d_fe_mat_sparse),
+    ("1D Anderson (frontend, per-apply)", H1d_fe_pa, H1d_fe_mat_sparse),
+    ("3D (frontend)", H3d_fe, H3d_fe_sparse),
 ]
     N = size(Hmf)[1]
     group = BenchmarkGroup()

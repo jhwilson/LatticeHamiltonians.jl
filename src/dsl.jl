@@ -400,7 +400,7 @@ Provide an upper bound on the number of non-zero elements in the Hamiltonian mat
 based on the provided hoppings `T`, the number of orbitals `d`, and the volume of the system `vol`.
 """
 function bound_nonzero(vol, d::Int, T)
-    non_zero = d + sum(t -> length(t[2][1]), T)
+    non_zero = d + (isempty(T) ? 0 : sum(t -> length(t[2][1]), T))
     non_zero * vol
 end
 
