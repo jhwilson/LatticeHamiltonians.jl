@@ -44,6 +44,81 @@ dim_span_var(j) = Symbol("Lprod$j")
 # ----
 
 """
+    hoist_matrix_elements(V, T, dim)
+
+Replace site-independent symbolic matrix elements in `V` and `T` with local binding
+symbols. Identical values share a binding, while literals and values that reference
+generated loop or workspace variables remain unchanged.
+
+Returns `(bindings, V2, T2)`, where `bindings` is an expression block that evaluates
+each hoisted value exactly once as a `ComplexF64`.
+"""
+function hoist_matrix_elements(V, T, dim)
+    disallowed = Set{Symbol}(
+        [
+            :L,
+            :d,
+            :i_in,
+            :i_out,
+            :idx,
+            :ψin,
+            :ψout,
+            :ivals,
+            :jvals,
+            :hvals,
+            [site_loop_var(j) for j = 1:dim]...,
+            [dim_span_var(j) for j = 1:dim]...,
+        ],
+    )
+    contains_disallowed(value) = if value isa Symbol
+        value in disallowed
+    elseif value isa Expr
+        any(contains_disallowed, value.args)
+    else
+        false
+    end
+
+    source_symbols = Set{Symbol}()
+    collect_symbols!(value) = if value isa Symbol
+        push!(source_symbols, value)
+    elseif value isa Expr
+        foreach(collect_symbols!, value.args)
+    end
+    foreach(collect_symbols!, V)
+    for (_, (_, _, values)) in T
+        foreach(collect_symbols!, values)
+    end
+
+    bindings = Expr[]
+    binding_symbols = Dict{LiteralOrSymbolic,Symbol}()
+    function hoist(value::LiteralOrSymbolic)
+        if value isa ComplexF64 || contains_disallowed(value)
+            return value
+        end
+
+        get!(binding_symbols, value) do
+            binding_index = length(bindings) + 1
+            binding = Symbol("_h$binding_index")
+            while binding in source_symbols
+                binding_index += 1
+                binding = Symbol("_h$binding_index")
+            end
+            push!(source_symbols, binding)
+            push!(bindings, :($binding::ComplexF64 = $value))
+            binding
+        end
+    end
+
+    V2 = LiteralOrSymbolic[hoist(value) for value in V]
+    T2 = empty(T)
+    for (hops, (rows, cols, values)) in T
+        T2[hops] = (rows, cols, LiteralOrSymbolic[hoist(value) for value in values])
+    end
+
+    Expr(:block, bindings...), V2, T2
+end
+
+"""
     matrix_element(h::Function; site)
     matrix_element(h::ComplexF64; site)
     matrix_element(h; site)
@@ -303,7 +378,11 @@ function ham_expr(V, T, dim; sparse = false)
     # NOTE: it is very important that the diagonal code is evaluated first
     # as it is responsible for zeroing out the output vector
     expr_V = make_diag_expr(V, dim; sparse = sparse)
-    expr_diag = loop_sites(dim, expr_V)
+    expr_diag = if !sparse && all(V -> V isa ComplexF64 && iszero(V), V)
+        :(fill!(ψout, zero(ComplexF64)))
+    else
+        loop_sites(dim, expr_V)
+    end
 
     # evaluate the off-diagonal elements
     expr_hops = Vector{Expr}(undef, length(T))
@@ -318,12 +397,331 @@ function ham_expr(V, T, dim; sparse = false)
 end
 
 """
+    hop_linear_offset(hops)
+
+Generate the constant linear offset for an unwrapped hop in the fused interior
+region. The first lattice coordinate has stride `d`; subsequent coordinates use
+the previously generated `Lprod` spans.
+"""
+function hop_linear_offset(hops)
+    terms = Any[]
+    for (axis, hop) in enumerate(hops)
+        iszero(hop) && continue
+        stride = axis == 1 ? :d : dim_span_var(axis - 1)
+        push!(terms, :($hop * $stride))
+    end
+    isempty(terms) ? 0 : Expr(:call, :+, terms...)
+end
+
+"""
+    site_linear_index(coordinates)
+
+Generate the zero-based orbital-vector index of a lattice site. This is used once
+per dimension-1 segment in the interior and once per site in the boundary slabs;
+it never introduces integer division or remainder operations.
+"""
+function site_linear_index(coordinates)
+    terms = Any[:(d * ($(coordinates[1]) - 1))]
+    for axis = 2:length(coordinates)
+        push!(terms, :($(dim_span_var(axis - 1)) * ($(coordinates[axis]) - 1)))
+    end
+    Expr(:call, :+, terms...)
+end
+
+"""
+    interior_margins(T, dim)
+
+Compute the code-generation-time lower and upper margins of the common no-wrap
+interior. The resulting box is `1 + lower[j]:L[j] - upper[j]` in dimension `j`;
+its complement is emitted as ordered, disjoint boundary slabs.
+"""
+function interior_margins(T, dim)
+    lower = zeros(Int, dim)
+    upper = zeros(Int, dim)
+    for (hops, _) in T, axis = 1:dim
+        lower[axis] = max(lower[axis], -hops[axis])
+        upper[axis] = max(upper[axis], hops[axis])
+    end
+    lower, upper
+end
+
+"""
+    loop_region(ranges, ex[, axis])
+
+Generate a column-major lattice loop nest for the supplied coordinate `ranges`.
+A `nothing` range omits that dimension, which lets the fused interior provide its
+own incrementally indexed innermost loop while reusing this region generator.
+"""
+function loop_region(ranges, ex, axis = length(ranges))
+    axis == 0 && return ex
+    inner = loop_region(ranges, ex, axis - 1)
+    ranges[axis] === nothing && return inner
+    loop_var = site_loop_var(axis)
+    quote
+        for $loop_var in $(ranges[axis])
+            $inner
+        end
+    end
+end
+
+"""
+    fused_site_expr(V, T, dim; boundary, real_values)
+
+Generate one fused site update. Each output orbital is accumulated in a register:
+the diagonal contribution comes first, followed by hopping contributions in `T`
+iteration order and entry-vector order. Interior sites use precomputed hop offsets;
+boundary sites first construct an explicitly wrapped input index for every hop.
+"""
+function fused_site_expr(V, T, dim; boundary, real_values = false)
+    site = site_var_vector(dim)
+    statements = Expr[]
+
+    if boundary
+        for (hop_index, (hops, _)) in enumerate(T)
+            wrapped_coordinates = Any[]
+            for axis = 1:dim
+                coordinate = Symbol("_m$(hop_index)_$axis")
+                loop_var = site_loop_var(axis)
+                hop = hops[axis]
+                push!(statements, :($coordinate = $loop_var + $hop))
+                push!(
+                    statements,
+                    :(
+                        $coordinate = if $coordinate > L[$axis]
+                            $coordinate - L[$axis]
+                        else
+                            ($coordinate < 1 ? $coordinate + L[$axis] : $coordinate)
+                        end
+                    ),
+                )
+                push!(wrapped_coordinates, coordinate)
+            end
+            input_index = Symbol("_iin$hop_index")
+            push!(statements, :($input_index = $(site_linear_index(wrapped_coordinates))))
+        end
+    end
+
+    for orbital in eachindex(V)
+        accumulator = Symbol("_acc$orbital")
+        diagonal = matrix_element(V[orbital]; site = site)
+        if diagonal == :()
+            push!(statements, :($accumulator = zero(ComplexF64)))
+        else
+            product = if real_values
+                :(real($diagonal) * ψin[i+$orbital])
+            else
+                :($diagonal * ψin[i+$orbital])
+            end
+            push!(statements, :($accumulator = $product))
+        end
+
+        for (hop_index, (_, (rows, cols, values))) in enumerate(T)
+            input_index = if boundary
+                Symbol("_iin$hop_index")
+            else
+                :(i + $(Symbol("_hoff$hop_index")))
+            end
+            for (row, col, value) in zip(rows, cols, values)
+                col == orbital || continue
+                matrix_value = matrix_element(value; site = site)
+                matrix_value == :() && continue
+                product = if real_values
+                    :(real($matrix_value) * ψin[$input_index+$row])
+                else
+                    :($matrix_value * ψin[$input_index+$row])
+                end
+                push!(statements, :($accumulator += $product))
+            end
+        end
+        push!(statements, :(ψout[i+$orbital] = $accumulator))
+    end
+
+    Expr(:block, statements...)
+end
+
+"""
+    loop_fused_interior(V, T, dim; real_values)
+
+Generate the single loop nest over the common no-wrap interior box. The base index
+is computed once at the start of each dimension-1 segment and then advanced by `d`,
+so all hop inputs use constant linear offsets and every output is written once.
+"""
+function loop_fused_interior(V, T, dim; real_values = false)
+    lower_vars = [Symbol("_lo$axis") for axis = 1:dim]
+    upper_vars = [Symbol("_hi$axis") for axis = 1:dim]
+    coordinates = Any[lower_vars[1], [site_loop_var(axis) for axis = 2:dim]...]
+    site_expr = fused_site_expr(V, T, dim; boundary = false, real_values = real_values)
+    site_loop = if real_values
+        quote
+            @simd ivdep for $(site_loop_var(1)) = ($(lower_vars[1])):($(upper_vars[1]))
+                $site_expr
+                i += d
+            end
+        end
+    else
+        quote
+            for $(site_loop_var(1)) = ($(lower_vars[1])):($(upper_vars[1]))
+                $site_expr
+                i += d
+            end
+        end
+    end
+    inner = quote
+        i = $(site_linear_index(coordinates))
+        $site_loop
+    end
+    ranges =
+        Any[nothing, [:(($(lower_vars[axis])):($(upper_vars[axis]))) for axis = 2:dim]...]
+    loop_region(ranges, inner)
+end
+
+"""
+    loop_fused_boundary_slab(V, T, dim, slab_axis)
+
+Generate one slab of the complement of the fused interior. Earlier coordinates are
+restricted to the interior, `slab_axis` is split into disjoint low/high ranges, and
+later coordinates span the lattice. Using `max(hi + 1, lo)` for the high range also
+partitions the full axis exactly once when that dimension's interior is empty.
+"""
+function loop_fused_boundary_slab(V, T, dim, slab_axis)
+    lower_vars = [Symbol("_lo$axis") for axis = 1:dim]
+    upper_vars = [Symbol("_hi$axis") for axis = 1:dim]
+    body = quote
+        i = $(site_linear_index(site_var_vector(dim)))
+        $(fused_site_expr(V, T, dim; boundary = true))
+    end
+
+    ranges = Any[
+        if axis < slab_axis
+            :(($(lower_vars[axis])):($(upper_vars[axis])))
+        elseif axis > slab_axis
+            :(1:L[$axis])
+        else
+            nothing
+        end for axis = 1:dim
+    ]
+    ranges[slab_axis] = :(1:($(lower_vars[slab_axis])-1))
+    low_slab = loop_region(ranges, body)
+    ranges[slab_axis] =
+        :(max($(upper_vars[slab_axis])+1, $(lower_vars[slab_axis])):L[$slab_axis])
+    high_slab = loop_region(ranges, body)
+    Expr(:block, low_slab, high_slab)
+end
+
+"""
+    all_real_matrix_elements(V, T)
+
+Generate a prelude condition for the fused real-coefficient specialization. Hoisted
+symbols are checked once per apply; real literals need no check, while complex
+literals and site-dependent expressions conservatively select the exact complex
+interior. Boundary slabs always use the exact complex expressions.
+
+The specialization multiplies by `real(t)` instead of `t + 0im`. For finite inputs
+this is exact, but when ψin contains `Inf` or `NaN` components it skips the
+`0 * Inf = NaN` cross terms that full complex multiplication would produce, so
+non-finite inputs can yield different (finite-imaginary) results than `sparse(H)`
+or the boundary sites. This trade is intentional: it is what enables the `@simd
+ivdep` interior sweep.
+"""
+function all_real_matrix_elements(V, T)
+    checks = Expr[]
+    matrix_values = Any[V...]
+    for (_, (_, _, values)) in T
+        append!(matrix_values, values)
+    end
+    for value in matrix_values
+        if value isa ComplexF64
+            isreal(value) || return false
+        elseif value isa Symbol
+            push!(checks, :(isreal($value)))
+        else
+            return false
+        end
+    end
+    isempty(checks) ? true : foldl((left, right) -> :($left && $right), checks)
+end
+
+"""
+    fused_apply_expr(V, T, dim)
+
+Generate the matrix-free Hamiltonian body as one interior sweep plus ordered,
+pairwise-disjoint boundary slabs. The prelude retains the lattice spans and adds
+one constant linear hop offset and the common interior bounds.
+"""
+function fused_apply_expr(V, T, dim)
+    # A `T[hops]` entry `(row, col, value)` means H[(n + hops, row), (n, col)] = value,
+    # matching the sparse constructor: `(1) -> t` puts `t` on ⟨n+1|H|n⟩. The fused
+    # kernels gather into the output site, so re-key the table by the gather
+    # displacement: at output site n the entry contributes value * ψin[n - hops, col]
+    # to the accumulator for orbital `row`. Sorting keeps the generated
+    # accumulation order independent of Dict internals.
+    T = sort!(
+        [-hops => (cols, rows, values) for (hops, (rows, cols, values)) in T];
+        by = Tuple ∘ first,
+    )
+    spans = Expr[
+        :($(dim_span_var(1)) = d * L[1]),
+        [:($(dim_span_var(axis))=$(dim_span_var(axis-1))*L[$axis]) for axis = 2:dim]...,
+    ]
+    offsets = Expr[
+        :($(Symbol("_hoff$hop_index")) = $(hop_linear_offset(hops))) for
+        (hop_index, (hops, _)) in enumerate(T)
+    ]
+    lower, upper = interior_margins(T, dim)
+    bounds = Expr[]
+    for axis = 1:dim
+        push!(bounds, :($(Symbol("_lo$axis")) = $(1 + lower[axis])))
+        push!(bounds, :($(Symbol("_hi$axis")) = L[$axis] - $(upper[axis])))
+    end
+    real_condition = all_real_matrix_elements(V, T)
+    interior = if real_condition === true
+        loop_fused_interior(V, T, dim; real_values = true)
+    elseif real_condition === false
+        loop_fused_interior(V, T, dim)
+    else
+        quote
+            if $real_condition
+                $(loop_fused_interior(V, T, dim; real_values = true))
+            else
+                $(loop_fused_interior(V, T, dim))
+            end
+        end
+    end
+    slabs = [loop_fused_boundary_slab(V, T, dim, axis) for axis = 1:dim]
+    Expr(:block, spans..., offsets..., bounds..., interior, slabs...)
+end
+
+"""
+    hop_extent_guard(T, dim)
+
+Generate call-time checks that every compiled hopping displacement still fits
+the lattice extents. The DSL folds long displacements at parse time, but `L` is
+mutable on the built Hamiltonian; the wrap logic corrects by at most one
+lattice period, so a displacement with `abs(hop) > L[axis]` would index out of
+bounds inside the `@inbounds` kernels.
+"""
+function hop_extent_guard(T, dim)
+    checks = Expr[]
+    seen = Set{NTuple{2,Int}}()
+    for (hops, _) in T, axis = 1:dim
+        hop = abs(hops[axis])
+        iszero(hop) && continue
+        (hop, axis) in seen && continue
+        push!(seen, (hop, axis))
+        message = "hopping displacement of magnitude $hop exceeds the lattice extent along dimension $axis; rebuild the Hamiltonian for this lattice size"
+        push!(checks, :($hop <= L[$axis] || throw(ArgumentError($message))))
+    end
+    Expr(:block, checks...)
+end
+
+"""
     make_apply(V, T, dim)
 
 Generate an `Expr` that defines a function to apply the Hamiltonian
 given parameters for the potential and hopping terms (V and T).
 """
 function make_apply(V, T, dim)
+    bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
     quote
         function (
             ψout::AbstractArray,
@@ -332,11 +730,17 @@ function make_apply(V, T, dim)
             L::MVector{$dim,Int64},
             params::Dict{Symbol,ComplexF64},
         )
+            length(ψout) == d * prod(L) && length(ψin) == d * prod(L) ||
+                throw(DimensionMismatch("input and output vectors must both have length d * prod(L)"))
+            $(hop_extent_guard(T2, dim))
             # The arguments of the function are used implicitly
             # in the generated expressions
             #
             # see e.g., diag_expr, hop_expr
-            $(ham_expr(V, T, dim))
+            @inbounds begin
+                $bindings
+                $(fused_apply_expr(V2, T2, dim))
+            end
         end
     end
 end
@@ -354,9 +758,13 @@ Generate an `Expr` that defines a function to construct the sparse matrix repres
 of the Hamiltonian given parameters for the potential and hopping terms (V and T).
 """
 function make_sparse(V, T, dim)
+    bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
+    per_cell_count = bound_nonzero(1, length(V), T)
     quote
         function (d::Int, L::MVector{$dim,Int64}, params::Dict{Symbol,ComplexF64})
-            nz = bound_nonzero(prod(L), d, $T)
+            $(hop_extent_guard(T2, dim))
+            $bindings
+            nz = $per_cell_count * prod(L)
             matrix_size = d * prod(L)
 
             ivals = Array{Int64}(undef, nz)
@@ -364,7 +772,9 @@ function make_sparse(V, T, dim)
             hvals = Array{ComplexF64}(undef, nz)
 
             idx = 1
-            $(ham_expr(V, T, dim; sparse = true))
+            @inbounds begin
+                $(ham_expr(V2, T2, dim; sparse = true))
+            end
             idx -= 1
 
             dropzeros!(

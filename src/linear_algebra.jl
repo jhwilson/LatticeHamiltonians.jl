@@ -41,7 +41,7 @@ Overloaded matrix multiplication operator for `LatticeHamiltonian`s
 using the `mul!` function.
 """
 function *(H::LatticeHamiltonian, ψ::AbstractVector)
-    v = Array{eltype(ψ)}(undef, length(ψ))
+    v = Array{ComplexF64}(undef, length(ψ))
     mul!(v, H, ψ)
     v
 end
