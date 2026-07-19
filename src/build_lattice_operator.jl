@@ -615,6 +615,13 @@ Generate a prelude condition for the fused real-coefficient specialization. Hois
 symbols are checked once per apply; real literals need no check, while complex
 literals and site-dependent expressions conservatively select the exact complex
 interior. Boundary slabs always use the exact complex expressions.
+
+The specialization multiplies by `real(t)` instead of `t + 0im`. For finite inputs
+this is exact, but when ψin contains `Inf` or `NaN` components it skips the
+`0 * Inf = NaN` cross terms that full complex multiplication would produce, so
+non-finite inputs can yield different (finite-imaginary) results than `sparse(H)`
+or the boundary sites. This trade is intentional: it is what enables the `@simd
+ivdep` interior sweep.
 """
 function all_real_matrix_elements(V, T)
     checks = Expr[]

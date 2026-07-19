@@ -50,6 +50,8 @@ Some explanation of the domain specific language (DSL) used here is in order.
 2. `(1) -> t # Hopping to the right neighbor with strength t`
 
     - Hoppings are specified by the number of lattice sites in each dimension. So for a one-dimensional lattice we have a hopping to the right `1` and to the left `-1`.
+    - The convention is `(δ) -> t` sets the matrix element ``\langle n + \delta | H | n \rangle = t``, i.e. `t` is the amplitude for hopping *from* site ``n`` *to* site ``n + \delta`` (the term ``t\, c^\dagger_{n+\delta} c_n``). Hermiticity is not automatic: specify the reverse hopping `(-δ) -> conj(t)` yourself.
+    - Displacements are taken on the periodic lattice: a hopping with ``|\delta| \geq L`` is folded to its remainder (with an informational message), so `(4)` on `L = [3]` is the same bond as `(1)`.
 
 3. `t = 1.0`
 
