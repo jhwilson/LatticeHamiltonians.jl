@@ -504,13 +504,15 @@ the diagonal contribution comes first, followed by hopping contributions in `T`
 iteration order and entry-vector order. Interior sites use precomputed hop offsets;
 boundary sites first construct an explicitly wrapped input index for every hop.
 """
-function fused_site_expr(V, T, dim; boundary, real_values = false)
+function fused_site_expr(V, T, dim; boundary, real_values = false, open = falses(dim))
     site = site_var_vector(dim)
     statements = Expr[]
+    valid_flags = Dict{Int,Symbol}()          # hop_index -> validity flag (open boundaries)
 
     if boundary
         for (hop_index, (hops, _)) in enumerate(T)
             wrapped_coordinates = Any[]
+            valid_terms = Expr[]
             for axis = 1:dim
                 coordinate = Symbol("_m$(hop_index)_$axis")
                 loop_var = site_loop_var(axis)
@@ -527,9 +529,23 @@ function fused_site_expr(V, T, dim; boundary, real_values = false)
                     ),
                 )
                 push!(wrapped_coordinates, coordinate)
+                # Open axis: a hop that leaves [1, L] does NOT wrap around. The wrapped
+                # coordinate above keeps the index in range (never out-of-bounds), and
+                # this flag drops the contribution for that site instead.
+                if open[axis] && hop != 0
+                    push!(valid_terms, :(1 <= $loop_var + $hop <= L[$axis]))
+                end
             end
             input_index = Symbol("_iin$hop_index")
             push!(statements, :($input_index = $(site_linear_index(wrapped_coordinates))))
+            if !isempty(valid_terms)
+                valid_sym = Symbol("_valid$hop_index")
+                push!(
+                    statements,
+                    :($valid_sym = $(reduce((a, b) -> :($a && $b), valid_terms))),
+                )
+                valid_flags[hop_index] = valid_sym
+            end
         end
     end
 
@@ -561,6 +577,9 @@ function fused_site_expr(V, T, dim; boundary, real_values = false)
                     :(real($matrix_value) * ψin[$input_index+$row])
                 else
                     :($matrix_value * ψin[$input_index+$row])
+                end
+                if haskey(valid_flags, hop_index)   # open-boundary hop: drop if out of range
+                    product = :($(valid_flags[hop_index]) ? $product : zero(ComplexF64))
                 end
                 push!(statements, :($accumulator += $product))
             end
@@ -615,12 +634,12 @@ restricted to the interior, `slab_axis` is split into disjoint low/high ranges, 
 later coordinates span the lattice. Using `max(hi + 1, lo)` for the high range also
 partitions the full axis exactly once when that dimension's interior is empty.
 """
-function loop_fused_boundary_slab(V, T, dim, slab_axis)
+function loop_fused_boundary_slab(V, T, dim, slab_axis; open = falses(dim))
     lower_vars = [Symbol("_lo$axis") for axis = 1:dim]
     upper_vars = [Symbol("_hi$axis") for axis = 1:dim]
     body = quote
         i = $(site_linear_index(site_var_vector(dim)))
-        $(fused_site_expr(V, T, dim; boundary = true))
+        $(fused_site_expr(V, T, dim; boundary = true, open = open))
     end
 
     ranges = Any[
@@ -680,7 +699,7 @@ Generate the matrix-free Hamiltonian body as one interior sweep plus ordered,
 pairwise-disjoint boundary slabs. The prelude retains the lattice spans and adds
 one constant linear hop offset and the common interior bounds.
 """
-function fused_apply_expr(V, T, dim)
+function fused_apply_expr(V, T, dim; open = falses(dim))
     # A `T[hops]` entry `(row, col, value)` means H[(n + hops, row), (n, col)] = value,
     # matching the sparse constructor: `(1) -> t` puts `t` on ⟨n+1|H|n⟩. The fused
     # kernels gather into the output site, so re-key the table by the gather
@@ -719,7 +738,7 @@ function fused_apply_expr(V, T, dim)
             end
         end
     end
-    slabs = [loop_fused_boundary_slab(V, T, dim, axis) for axis = 1:dim]
+    slabs = [loop_fused_boundary_slab(V, T, dim, axis; open = open) for axis = 1:dim]
     Expr(:block, spans..., offsets..., bounds..., interior, slabs...)
 end
 
