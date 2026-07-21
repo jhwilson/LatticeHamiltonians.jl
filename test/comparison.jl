@@ -96,3 +96,109 @@ end
         @test iszero((H * ψ)[1])
     end
 end
+
+# ── multi-dimensional open BCs ────────────────────────────────────────────────
+# Independent oracle: start from the trusted PERIODIC operator and remove exactly
+# the nearest-neighbour bonds that wrap across an open axis. For |δ| ≤ 1 hops and
+# L[axis] ≥ 3, a bond whose cell-coordinate difference along an axis has magnitude
+# L[axis] - 1 can only arise by wrapping, so it is the boundary bond to drop. This
+# depends solely on the documented orbital-fastest, column-major flattening — not on
+# any codegen internal — so it is a genuine cross-check of the multi-dim open path.
+function cell_coords(idx, L, d)
+    lin = div(idx - 1, d)                       # 0-based cell (orbital index dropped)
+    coords = similar(L)
+    for a in eachindex(L)
+        coords[a] = mod(lin, L[a]) + 1          # column-major: dim 1 fastest
+        lin = div(lin, L[a])
+    end
+    coords
+end
+
+function open_reference(Hp, L, d, open)
+    Href = copy(Hp)
+    rows, cols, _ = findnz(Hp)
+    for (r, c) in zip(rows, cols)
+        cr = cell_coords(r, L, d)
+        cc = cell_coords(c, L, d)
+        for a in eachindex(L)
+            if open[a] && abs(cc[a] - cr[a]) == L[a] - 1
+                Href[r, c] = 0                  # a NN bond wrapping this open axis
+                break
+            end
+        end
+    end
+    dropzeros!(Href)
+end
+
+@testset "2D open boundary conditions (L = [3, 4])" begin
+    Hp = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        (0, 0) -> [0 1; 1 0]
+        (1, 0) -> [0.5 0; 0 0.5]
+        (-1, 0) -> [0.5 0; 0 0.5]
+        (0, 1) -> [0.3 0; 0 0.3]
+        (0, -1) -> [0.3 0; 0 0.3]
+    end)
+    @test open_reference(Hp, [3, 4], 2, [false, false]) == Hp     # sanity: nothing removed
+
+    H_tt = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        open = [true, true]
+        (0, 0) -> [0 1; 1 0]
+        (1, 0) -> [0.5 0; 0 0.5]
+        (-1, 0) -> [0.5 0; 0 0.5]
+        (0, 1) -> [0.3 0; 0 0.3]
+        (0, -1) -> [0.3 0; 0 0.3]
+    end)
+    @test H_tt == open_reference(Hp, [3, 4], 2, [true, true])
+
+    H_tf = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        open = [true, false]
+        (0, 0) -> [0 1; 1 0]
+        (1, 0) -> [0.5 0; 0 0.5]
+        (-1, 0) -> [0.5 0; 0 0.5]
+        (0, 1) -> [0.3 0; 0 0.3]
+        (0, -1) -> [0.3 0; 0 0.3]
+    end)
+    @test H_tf == open_reference(Hp, [3, 4], 2, [true, false])
+end
+
+@testset "3D open boundary conditions (L = [3, 3, 3])" begin
+    Hp = sparse(@lattice_hamiltonian begin
+        L = [3, 3, 3]
+        (0, 0, 0) -> [0 1; 1 0]
+        (1, 0, 0) -> [0.5 0; 0 0.5]
+        (-1, 0, 0) -> [0.5 0; 0 0.5]
+        (0, 1, 0) -> [0.3 0; 0 0.3]
+        (0, -1, 0) -> [0.3 0; 0 0.3]
+        (0, 0, 1) -> [0.2 0; 0 0.2]
+        (0, 0, -1) -> [0.2 0; 0 0.2]
+    end)
+
+    H_ttt = sparse(@lattice_hamiltonian begin
+        L = [3, 3, 3]
+        open = [true, true, true]
+        (0, 0, 0) -> [0 1; 1 0]
+        (1, 0, 0) -> [0.5 0; 0 0.5]
+        (-1, 0, 0) -> [0.5 0; 0 0.5]
+        (0, 1, 0) -> [0.3 0; 0 0.3]
+        (0, -1, 0) -> [0.3 0; 0 0.3]
+        (0, 0, 1) -> [0.2 0; 0 0.2]
+        (0, 0, -1) -> [0.2 0; 0 0.2]
+    end)
+    @test H_ttt == open_reference(Hp, [3, 3, 3], 2, [true, true, true])
+
+    H_mid = sparse(@lattice_hamiltonian begin
+        L = [3, 3, 3]
+        open = [false, true, false]
+        (0, 0, 0) -> [0 1; 1 0]
+        (1, 0, 0) -> [0.5 0; 0 0.5]
+        (-1, 0, 0) -> [0.5 0; 0 0.5]
+        (0, 1, 0) -> [0.3 0; 0 0.3]
+        (0, -1, 0) -> [0.3 0; 0 0.3]
+        (0, 0, 1) -> [0.2 0; 0 0.2]
+        (0, 0, -1) -> [0.2 0; 0 0.2]
+    end)
+    @test H_mid == open_reference(Hp, [3, 3, 3], 2, [false, true, false])
+end
