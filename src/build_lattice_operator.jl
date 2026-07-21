@@ -292,12 +292,18 @@ function loop_site_pairs(hops, ex; open = falses(length(hops)))
 end
 
 """
-    loop_site_pairs(hops, ex, axis)
+    loop_site_pairs(hops, ex, axis; open=falses(axis))
 
 The main method of `loop_site_pairs` works by recursively calling in to this method.
 Each call to this method generates a block of for loops for a single lattice dimension,
 and then calls the next dimension recursively, decreasing `axis` by 1.
 When we have reached the last dimension, we insert the expression `ex` at each site.
+
+`open[axis] == true` treats that dimension as an open boundary: the wrap-around loop is
+dropped (sign-dependent — the wrap is the trailing run for a positive hop, the leading
+run for a negative one) and the dropped loop's index advance is replicated so the net
+per-axis advance is unchanged. The default (all `false`) is periodic. On this branch the
+sparse path reaches this helper; the fused dense path handles open BCs in `fused_site_expr`.
 """
 function loop_site_pairs(hops, ex, axis; open = falses(axis))
     # axis == 1 is the slowest changing lattice dimension
@@ -371,10 +377,13 @@ function loop_site_pairs(hops, ex, axis; open = falses(axis))
 end
 
 """
-    ham_expr(V, T, dim; sparse=false)
+    ham_expr(V, T, dim; sparse=false, open=falses(dim))
 
 Combine the expressions for the diagonal and hopping terms to generate
 a block of expressions that applies the full Hamiltonian.
+
+`open` is a per-axis `Bool` vector (default all-periodic); a `true` axis is treated as an
+open boundary — the boundary hop is dropped rather than wrapping (see `loop_site_pairs`).
 
 The behavior of the function can be controlled by the `sparse` keyword argument:
 
@@ -497,12 +506,17 @@ function loop_region(ranges, ex, axis = length(ranges))
 end
 
 """
-    fused_site_expr(V, T, dim; boundary, real_values)
+    fused_site_expr(V, T, dim; boundary, real_values, open=falses(dim))
 
 Generate one fused site update. Each output orbital is accumulated in a register:
 the diagonal contribution comes first, followed by hopping contributions in `T`
 iteration order and entry-vector order. Interior sites use precomputed hop offsets;
 boundary sites first construct an explicitly wrapped input index for every hop.
+
+`open` is a per-axis `Bool` vector (default all-periodic) and applies only to boundary
+sites: for a `true` axis, a hop whose input coordinate leaves `[1, L]` is flagged and its
+contribution is dropped for that site (no wrap-around), so open axes have no coupling
+across the boundary. The wrapped index is still computed, keeping the array access in range.
 """
 function fused_site_expr(V, T, dim; boundary, real_values = false, open = falses(dim))
     site = site_var_vector(dim)
@@ -627,12 +641,15 @@ function loop_fused_interior(V, T, dim; real_values = false)
 end
 
 """
-    loop_fused_boundary_slab(V, T, dim, slab_axis)
+    loop_fused_boundary_slab(V, T, dim, slab_axis; open=falses(dim))
 
 Generate one slab of the complement of the fused interior. Earlier coordinates are
 restricted to the interior, `slab_axis` is split into disjoint low/high ranges, and
 later coordinates span the lattice. Using `max(hi + 1, lo)` for the high range also
 partitions the full axis exactly once when that dimension's interior is empty.
+
+`open` (default all-periodic) is forwarded to `fused_site_expr`; `true` axes drop
+hops that leave the lattice at these boundary sites instead of wrapping.
 """
 function loop_fused_boundary_slab(V, T, dim, slab_axis; open = falses(dim))
     lower_vars = [Symbol("_lo$axis") for axis = 1:dim]
@@ -693,11 +710,15 @@ function all_real_matrix_elements(V, T)
 end
 
 """
-    fused_apply_expr(V, T, dim)
+    fused_apply_expr(V, T, dim; open=falses(dim))
 
 Generate the matrix-free Hamiltonian body as one interior sweep plus ordered,
 pairwise-disjoint boundary slabs. The prelude retains the lattice spans and adds
 one constant linear hop offset and the common interior bounds.
+
+`open` is a per-axis `Bool` vector (default all-periodic). It is passed to the boundary
+slabs only: the interior never crosses a boundary, so it is identical for open and
+periodic; `true` axes drop cross-boundary hops in `fused_site_expr` (no wrap-around).
 """
 function fused_apply_expr(V, T, dim; open = falses(dim))
     # A `T[hops]` entry `(row, col, value)` means H[(n + hops, row), (n, col)] = value,
@@ -766,10 +787,12 @@ function hop_extent_guard(T, dim)
 end
 
 """
-    make_apply(V, T, dim)
+    make_apply(V, T, dim; open=falses(dim))
 
 Generate an `Expr` that defines a function to apply the Hamiltonian
-given parameters for the potential and hopping terms (V and T).
+given parameters for the potential and hopping terms (V and T). `open` is a per-axis
+`Bool` vector (default all-periodic); `true` marks an axis as open (no wrap-around),
+handled in the fused kernel by `fused_site_expr`.
 """
 function make_apply(V, T, dim; open = falses(dim))
     bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
@@ -803,10 +826,11 @@ function make_apply(
 end
 
 """
-    make_sparse(V, T, dim)
+    make_sparse(V, T, dim; open=falses(dim))
 
 Generate an `Expr` that defines a function to construct the sparse matrix representation
-of the Hamiltonian given parameters for the potential and hopping terms (V and T).
+of the Hamiltonian given parameters for the potential and hopping terms (V and T). `open`
+is a per-axis `Bool` vector (default all-periodic); `true` marks an axis as open.
 """
 function make_sparse(V, T, dim; open = falses(dim))
     bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
