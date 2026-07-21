@@ -201,4 +201,26 @@ end
         (0, 0, -1) -> [0.2 0; 0 0.2]
     end)
     @test H_mid == open_reference(Hp, [3, 3, 3], 2, [false, true, false])
+
+    # open only the SLOWEST (outermost-loop) axis z, periodic in x and y — a mixed case.
+    # The 2D/3D tests above use sparse(), i.e. the loop_site_pairs path; on this branch
+    # the DENSE apply routes through the fused kernel instead, so here we assert BOTH the
+    # sparse path AND the fused dense path (H*ψ) against the oracle, covering the fused
+    # boundary-slab open handling in a mixed multi-dimensional setting.
+    H_zopen = @lattice_hamiltonian begin
+        L = [3, 3, 3]
+        open = [false, false, true]
+        (0, 0, 0) -> [0 1; 1 0]
+        (1, 0, 0) -> [0.5 0; 0 0.5]
+        (-1, 0, 0) -> [0.5 0; 0 0.5]
+        (0, 1, 0) -> [0.3 0; 0 0.3]
+        (0, -1, 0) -> [0.3 0; 0 0.3]
+        (0, 0, 1) -> [0.2 0; 0 0.2]
+        (0, 0, -1) -> [0.2 0; 0 0.2]
+    end
+    ref_z = Matrix(open_reference(Hp, [3, 3, 3], 2, [false, false, true]))
+    @test Matrix(sparse(H_zopen)) == ref_z                        # sparse path
+    N = size(Hp, 1)
+    dense = reduce(hcat, [H_zopen * setindex!(zeros(ComplexF64, N), 1.0, k) for k = 1:N])
+    @test dense == ref_z                                          # fused dense path
 end
