@@ -131,6 +131,7 @@ function loop_periodic(s, hop, ex, j, BCs)
     m::Int = hop[j]
     sj = Symbol("$(s)$j")
     Lprodj = Symbol("Lprod$j")
+    stride = j == 1 ? :d : Symbol("Lprod$(j-1)")
     if m < 0 && !BCs[j]
         expr = quote
             for $sj = 1:$(-m)
@@ -142,13 +143,17 @@ function loop_periodic(s, hop, ex, j, BCs)
             end
             ind2 += $Lprodj
         end
-    elseif m < 0 && BCs[j] #change to comport with function header
+    elseif m < 0 && BCs[j]  # OPEN, negative hop: drop the boundary run (was the bug:
+        # the old code kept it and dropped the bulk); replicate its i_out/i_in advance
+        # so the net per-axis advance stays Lprodj, then run the bulk tail.
         expr = quote
-            for $sj = 1:$(-m)
+            ind1 += $(-m) * $stride
+            ind2 += $(-m) * $stride
+            ind2 -= $Lprodj
+            for $sj = $(-m + 1):L[$j]
                 $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
-            ind1 += $m * $Lprodj - 1
-            ind2 += $m * $Lprodj - 1
+            ind2 += $Lprodj
         end
     elseif m > 0 && !BCs[j] #change to comport with function header
         expr = quote
@@ -161,13 +166,15 @@ function loop_periodic(s, hop, ex, j, BCs)
             end
             ind2 += $Lprodj
         end
-    elseif m > 0 && BCs[j]
+    elseif m > 0 && BCs[j]  # OPEN, positive hop: keep the bulk run, drop the wrap tail
+        # (was the bug: the old code ran the wrap tail instead). Advance i_out/i_in past
+        # the dropped cells so the net per-axis advance stays Lprodj.
         expr = quote
-            ind1 += $m * $Lprodj - 1
-            for $sj = (L[$j]-$(m - 1)):L[$j]
+            for $sj = 1:(L[$j]-$m)
                 $(loop_periodic(s, hop, ex, j - 1, BCs))
             end
-            ind2 += $m * $Lprodj - 1
+            ind1 += $m * $stride
+            ind2 += $m * $stride
         end
     else
         expr = quote
@@ -216,9 +223,9 @@ function make_apply(params, V, T, dim; BCs = "Periodic")
     # println(ps)
 
     if BCs == "Periodic"
-        BCs = ones(Bool, dim)
+        BCs = falses(dim)              # false = periodic (was inverted: had ones/true)
     elseif BCs == "Open"
-        BCs = zeros(Bool, dim)
+        BCs = trues(dim)               # true = open (was inverted: had zeros/false)
     end
 
     @assert eltype(BCs) <: Integer "BCs must be labeled with Booleans"

@@ -158,6 +158,7 @@ macro lattice_hamiltonian(input)
     exprL = :()
     exprV = :()
     exprd = :()
+    exprOpen = nothing
     hops = Vector{Expr}()  # Store all hopping expressions in a vector
     params = Dict{Symbol,ComplexF64}() #Initialize dictionary
 
@@ -169,6 +170,8 @@ macro lattice_hamiltonian(input)
         end
         if ex.args[1] == :L
             exprL = ex
+        elseif ex.args[1] == :open
+            exprOpen = ex          # true = open, false = periodic (default all-periodic)
         elseif ex.head == :(->)
             # seperate out the onsite hopping matrix
             # as it requires special handling
@@ -219,7 +222,8 @@ macro lattice_hamiltonian(input)
     B = SMatrix{dim,dim,Float64}(I * 2 * pi) #TODO
     r = fill(SVector{dim}(zeros(Float64, dim)), d) #TODO
 
-    apply = eval(make_apply(params, V, T, dim))
+    bcs = isnothing(exprOpen) ? falses(dim) : Vector{Bool}(exprOpen.args[2].args)
+    apply = eval(make_apply(params, V, T, dim; BCs = bcs))
     H = LatticeHamiltonian(A, B, d, L, params, r, apply)
 
     build_sparse(H, V, T)
@@ -361,7 +365,7 @@ function build_sparse(H::LatticeHamiltonian, V, T)
                 d = H.d
                 L = H.L
                 dim = length(L)
-                $(ham_expr(V, T, dim; sparse=true))
+                $(ham_expr(V, T, dim, falses(dim); sparse=true))
                 idx -= 1
                 return dropzeros!(
                     sparse(ivals[1:idx], jvals[1:idx], hvals[1:idx], size(H)...),
