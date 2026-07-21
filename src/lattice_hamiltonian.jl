@@ -46,10 +46,12 @@ It expects the following types of expressions, supplied in any order.
   - **REQUIRED** `L = [L1, L2, ...]`: A vector of integers, of length `lattice_dim` that define the size of the system.
     The length of this vector defines the dimensionality of the system.
     And each entry is the the number of unit cells in that direction.
-  - **REQUIRED** `V = [V1, V2, ...]`: A vector of numbers of length `d`, that define the on-site potential
-    for each orbital within a unit cell.
-  - Expressions of the orm `(δ1, δ2, ...) -> T`, with `δi` integers and `T` a \\(d\\times d\\) matrix:
-    The hopping matrix for to hop by `(δ1, δ2, ...)` unit cells.
+  - Optional `open = [b1, b2, ...]`: A vector of `lattice_dim` Booleans, one per lattice
+    direction. `true` marks that axis as open (no wrap-around); `false` — the default for
+    every axis — keeps it periodic.
+  - Expressions of the form `(δ1, δ2, ...) -> T`, with `δi` integers and `T` a \\(d\\times d\\) matrix:
+    The hopping matrix to hop by `(δ1, δ2, ...)` unit cells. The on-site potential is taken
+    from the diagonal of the `(0, 0, ...)` on-site term — there is no separate `V` input.
 
 # Examples
 
@@ -58,7 +60,6 @@ with 10 unit cells.
 
     H_ssh = @lattice_hamiltonian begin
         L = [10]
-        V = [0.0, 0.0]
         (0) -> [0 t1
                 t1 0]
         (1) -> [0 t2

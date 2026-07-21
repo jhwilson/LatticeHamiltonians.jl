@@ -61,3 +61,38 @@ end
 
     system_test_suite(H, Hmat)
 end
+
+@testset "Polyacetylene (open boundary conditions)" begin
+    # Same SSH chain as the periodic Polyacetylene test, but the single lattice
+    # axis is open (open = [true]) so the last unit cell must NOT hop back around
+    # to the first. The reference matrix is therefore identical EXCEPT it omits
+    # the periodic wraparound bond Hmat[1, 20] = Hmat[20, 1] = 2.
+    H = @lattice_hamiltonian begin
+        L = [10]
+        open = [true]
+        (0) -> [0 t1; t1 0]
+        (1) -> [0 t2; 0 0]
+        (-1) -> [0 0; t2 0]
+        t1 = 1.0
+        t2 = 2.0
+    end
+
+    Hmat = diagm(
+        1 => [complex(1.0 + iseven(j)) for j = 1:19],
+        -1 => [complex(1.0 + iseven(j)) for j = 1:19],
+    )
+    # NOTE: the periodic version additionally sets Hmat[1, 20] = Hmat[20, 1] = 2;
+    # deliberately omitted here — an open chain has no wraparound coupling.
+
+    @testset "Compare with manually written open-chain Hamiltonian" begin
+        compare_over_wavefunctions(H, Hmat)
+    end
+
+    @testset "No wraparound coupling" begin
+        # Directly assert the boundary bond open BCs must drop: exciting the last
+        # site produces no amplitude on the first (2.0 under periodic BCs).
+        ψ = zeros(ComplexF64, 20)
+        ψ[20] = 1.0
+        @test iszero((H * ψ)[1])
+    end
+end
