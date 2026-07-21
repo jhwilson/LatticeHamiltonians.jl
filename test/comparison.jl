@@ -201,4 +201,20 @@ end
         (0, 0, -1) -> [0.2 0; 0 0.2]
     end)
     @test H_mid == open_reference(Hp, [3, 3, 3], 2, [false, true, false])
+
+    # open only the SLOWEST (outermost-loop) axis z, periodic in x and y — the mixed
+    # case where the dropped-wrap axis is the outer recursion level and the two inner
+    # axes still wrap; exercises loop_site_pairs' per-axis decision + advance bookkeeping.
+    H_zopen = sparse(@lattice_hamiltonian begin
+        L = [3, 3, 3]
+        open = [false, false, true]
+        (0, 0, 0) -> [0 1; 1 0]
+        (1, 0, 0) -> [0.5 0; 0 0.5]
+        (-1, 0, 0) -> [0.5 0; 0 0.5]
+        (0, 1, 0) -> [0.3 0; 0 0.3]
+        (0, -1, 0) -> [0.3 0; 0 0.3]
+        (0, 0, 1) -> [0.2 0; 0 0.2]
+        (0, 0, -1) -> [0.2 0; 0 0.2]
+    end)
+    @test H_zopen == open_reference(Hp, [3, 3, 3], 2, [false, false, true])
 end
