@@ -207,12 +207,12 @@ quote
 end
 ```
 """
-function loop_site_pairs(hops, ex)
+function loop_site_pairs(hops, ex; open = falses(length(hops)))
     quote
         # initialize the indices of the output and input vectors 
         i_out = 0
         i_in = d * $(site_expr(hops))
-        $(loop_site_pairs(hops, ex, length(hops)))
+        $(loop_site_pairs(hops, ex, length(hops); open = open))
     end
 end
 
@@ -224,7 +224,7 @@ Each call to this method generates a block of for loops for a single lattice dim
 and then calls the next dimension recursively, decreasing `axis` by 1.
 When we have reached the last dimension, we insert the expression `ex` at each site.
 """
-function loop_site_pairs(hops, ex, axis)
+function loop_site_pairs(hops, ex, axis; open = falses(axis))
     # axis == 1 is the slowest changing lattice dimension
     # axis == 0 corresponds orbital hoppings
     # which should already be handled in the supplied expression
@@ -242,7 +242,7 @@ function loop_site_pairs(hops, ex, axis)
         # just loop over all sites
         return quote
             for $loop_var = 1:L[$axis]
-                $(loop_site_pairs(hops, ex, axis - 1))
+                $(loop_site_pairs(hops, ex, axis - 1; open = open))
             end
         end
     end
@@ -251,15 +251,47 @@ function loop_site_pairs(hops, ex, axis)
     index_after_wrap = hop_range > 0 ? :(L[$axis] - $(hop_range - 1)) : (-hop_range + 1)
     dim_span = dim_span_var(axis)
 
-    quote
-        for $loop_var = 1:$index_before_wrap
-            $(loop_site_pairs(hops, ex, axis - 1))
+    # per-cell advance of i_out/i_in along this axis = span of all inner dimensions
+    stride = axis == 1 ? :d : dim_span_var(axis - 1)
+
+    if open[axis]
+        # Open boundary: the hop crosses the edge for exactly the cells the periodic
+        # code sends through the wrap loop, so we drop that loop. Which loop is the
+        # wrap depends on the sign of the hop: for hop_range > 0 the wrap is the
+        # trailing run, for hop_range < 0 it is the leading run. In both cases we
+        # replicate the dropped loop's i_out/i_in advance so the NET advance across
+        # this axis stays `dim_span` (keeps multi-dimensional bookkeeping aligned).
+        if hop_range > 0
+            quote
+                for $loop_var = 1:$index_before_wrap
+                    $(loop_site_pairs(hops, ex, axis - 1; open = open))
+                end
+                i_out += $hop_range * $stride
+                i_in += $hop_range * $stride
+            end
+        else
+            quote
+                i_out += $(-hop_range) * $stride
+                i_in += $(-hop_range) * $stride
+                i_in -= $dim_span
+                for $loop_var = $index_after_wrap:L[$axis]
+                    $(loop_site_pairs(hops, ex, axis - 1; open = open))
+                end
+                i_in += $dim_span
+            end
         end
-        i_in -= $dim_span
-        for $loop_var = $index_after_wrap:L[$axis]
-            $(loop_site_pairs(hops, ex, axis - 1))
+    else
+        # periodic boundary: sites past the edge wrap to the other end of the axis.
+        quote
+            for $loop_var = 1:$index_before_wrap
+                $(loop_site_pairs(hops, ex, axis - 1; open = open))
+            end
+            i_in -= $dim_span
+            for $loop_var = $index_after_wrap:L[$axis]
+                $(loop_site_pairs(hops, ex, axis - 1; open = open))
+            end
+            i_in += $dim_span
         end
-        i_in += $dim_span
     end
 end
 
@@ -281,7 +313,7 @@ When implementing matrix-vector multiplication directly, the incoming and outgoi
 This effectively corresponds to a Kroneker product of the lattice dimensions.
 Because Julia uses column-major ordering, the indices of the multi-dimensional array are ordered fastest to slowest changing: [o, i_1, i_2, ..., i_n] where o is the oribital index and i_1, i_2, ..., i_n are the lattice indices in dimensions 1, 2, ..., n.
 """
-function ham_expr(V, T, dim; sparse = false)
+function ham_expr(V, T, dim; sparse = false, open = falses(dim))
     # since we are flattening the multi-dimensional arrays into 1D arrays,
     # we need to keep track of the stride of the lattice dimensions
     # for each lattice dimension
@@ -310,7 +342,7 @@ function ham_expr(V, T, dim; sparse = false)
     idx = 1
     for (hops, (is, js, hs)) in T
         expr_T = make_hop_expr(is, js, hs, dim; sparse = sparse)
-        expr_hops[idx] = loop_site_pairs(hops, expr_T)
+        expr_hops[idx] = loop_site_pairs(hops, expr_T; open = open)
         idx += 1
     end
 
@@ -323,7 +355,7 @@ end
 Generate an `Expr` that defines a function to apply the Hamiltonian
 given parameters for the potential and hopping terms (V and T).
 """
-function make_apply(V, T, dim)
+function make_apply(V, T, dim; open = falses(dim))
     quote
         function (
             ψout::AbstractArray,
@@ -336,7 +368,7 @@ function make_apply(V, T, dim)
             # in the generated expressions
             #
             # see e.g., diag_expr, hop_expr
-            $(ham_expr(V, T, dim))
+            $(ham_expr(V, T, dim; open = open))
         end
     end
 end
@@ -344,7 +376,7 @@ end
 function make_apply(
     builder::HamiltonianBuilder{real_dim,lattice_dim},
 ) where {real_dim,lattice_dim}
-    make_apply(builder.V, builder.T, lattice_dim)
+    make_apply(builder.V, builder.T, lattice_dim; open = builder.open)
 end
 
 """
@@ -353,7 +385,7 @@ end
 Generate an `Expr` that defines a function to construct the sparse matrix representation
 of the Hamiltonian given parameters for the potential and hopping terms (V and T).
 """
-function make_sparse(V, T, dim)
+function make_sparse(V, T, dim; open = falses(dim))
     quote
         function (d::Int, L::MVector{$dim,Int64}, params::Dict{Symbol,ComplexF64})
             nz = bound_nonzero(prod(L), d, $T)
@@ -364,7 +396,7 @@ function make_sparse(V, T, dim)
             hvals = Array{ComplexF64}(undef, nz)
 
             idx = 1
-            $(ham_expr(V, T, dim; sparse = true))
+            $(ham_expr(V, T, dim; sparse = true, open = open))
             idx -= 1
 
             dropzeros!(
@@ -383,5 +415,5 @@ end
 function make_sparse(
     builder::HamiltonianBuilder{real_dim,lattice_dim},
 ) where {real_dim,lattice_dim}
-    make_sparse(builder.V, builder.T, lattice_dim)
+    make_sparse(builder.V, builder.T, lattice_dim; open = builder.open)
 end
