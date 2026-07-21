@@ -217,12 +217,17 @@ function loop_site_pairs(hops, ex; open = falses(length(hops)))
 end
 
 """
-    loop_site_pairs(hops, ex, axis)
+    loop_site_pairs(hops, ex, axis; open=falses(axis))
 
 The main method of `loop_site_pairs` works by recursively calling in to this method.
 Each call to this method generates a block of for loops for a single lattice dimension,
 and then calls the next dimension recursively, decreasing `axis` by 1.
 When we have reached the last dimension, we insert the expression `ex` at each site.
+
+`open[axis] == true` treats that dimension as an open boundary: the wrap-around loop is
+dropped (sign-dependent — the wrap is the trailing run for a positive hop, the leading
+run for a negative one) and the dropped loop's index advance is replicated so the net
+per-axis advance is unchanged. The default (all `false`) is periodic.
 """
 function loop_site_pairs(hops, ex, axis; open = falses(axis))
     # axis == 1 is the slowest changing lattice dimension
@@ -296,10 +301,13 @@ function loop_site_pairs(hops, ex, axis; open = falses(axis))
 end
 
 """
-    ham_expr(V, T, dim; sparse=false)
+    ham_expr(V, T, dim; sparse=false, open=falses(dim))
 
 Combine the expressions for the diagonal and hopping terms to generate
 a block of expressions that applies the full Hamiltonian.
+
+`open` is a per-axis `Bool` vector (default all-periodic); a `true` axis is treated as an
+open boundary — the boundary hop is dropped rather than wrapping (see `loop_site_pairs`).
 
 The behavior of the function can be controlled by the `sparse` keyword argument:
 
@@ -353,7 +361,8 @@ end
     make_apply(V, T, dim)
 
 Generate an `Expr` that defines a function to apply the Hamiltonian
-given parameters for the potential and hopping terms (V and T).
+given parameters for the potential and hopping terms (V and T). `open` is a per-axis
+`Bool` vector (default all-periodic); `true` marks an axis as open (no wrap-around).
 """
 function make_apply(V, T, dim; open = falses(dim))
     quote
@@ -380,10 +389,11 @@ function make_apply(
 end
 
 """
-    make_sparse(V, T, dim)
+    make_sparse(V, T, dim; open=falses(dim))
 
 Generate an `Expr` that defines a function to construct the sparse matrix representation
-of the Hamiltonian given parameters for the potential and hopping terms (V and T).
+of the Hamiltonian given parameters for the potential and hopping terms (V and T). `open`
+is a per-axis `Bool` vector (default all-periodic); `true` marks an axis as open.
 """
 function make_sparse(V, T, dim; open = falses(dim))
     quote
