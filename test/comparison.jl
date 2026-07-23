@@ -164,6 +164,56 @@ end
     @test H_tf == open_reference(Hp, [3, 4], 2, [true, false])
 end
 
+@testset "2D open BCs with DIAGONAL hops (L = [3, 4])" begin
+    # Diagonal hops move in TWO axes at once, so the open-BC wrap-drop must decide
+    # per axis: a (1,1) bond is dropped iff it wraps in x OR y. Single-axis NN hops
+    # cannot reach this; mixed BCs ([true,false]/[false,true]) exercise the case where
+    # one axis wraps-and-drops while the other wraps-and-KEEPS on the SAME bond. The
+    # |Δcell| == L-1 oracle stays valid because each axis still has |δ| = 1.
+    Hp = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        (0, 0) -> [0 1; 1 0]
+        (1, 1) -> [0.15 0; 0 0.15]
+        (-1, -1) -> [0.15 0; 0 0.15]
+        (1, -1) -> [0.1 0; 0 0.1]
+        (-1, 1) -> [0.1 0; 0 0.1]
+    end)
+    @test open_reference(Hp, [3, 4], 2, [false, false]) == Hp     # sanity: nothing removed
+
+    H_tt = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        open = [true, true]
+        (0, 0) -> [0 1; 1 0]
+        (1, 1) -> [0.15 0; 0 0.15]
+        (-1, -1) -> [0.15 0; 0 0.15]
+        (1, -1) -> [0.1 0; 0 0.1]
+        (-1, 1) -> [0.1 0; 0 0.1]
+    end)
+    @test H_tt == open_reference(Hp, [3, 4], 2, [true, true])
+
+    H_tf = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        open = [true, false]
+        (0, 0) -> [0 1; 1 0]
+        (1, 1) -> [0.15 0; 0 0.15]
+        (-1, -1) -> [0.15 0; 0 0.15]
+        (1, -1) -> [0.1 0; 0 0.1]
+        (-1, 1) -> [0.1 0; 0 0.1]
+    end)
+    @test H_tf == open_reference(Hp, [3, 4], 2, [true, false])
+
+    H_ft = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        open = [false, true]
+        (0, 0) -> [0 1; 1 0]
+        (1, 1) -> [0.15 0; 0 0.15]
+        (-1, -1) -> [0.15 0; 0 0.15]
+        (1, -1) -> [0.1 0; 0 0.1]
+        (-1, 1) -> [0.1 0; 0 0.1]
+    end)
+    @test H_ft == open_reference(Hp, [3, 4], 2, [false, true])
+end
+
 @testset "3D open boundary conditions (L = [3, 3, 3])" begin
     Hp = sparse(@lattice_hamiltonian begin
         L = [3, 3, 3]
