@@ -55,6 +55,125 @@ end
         test_fused_against_sparse(H)
     end
 
+    # Open-BC mirror of the diagonal test above. A (1,1) bond crosses the boundary in
+    # TWO axes at once, so the fused apply must exclude it from the @simd ivdep interior
+    # (interior_margins must shrink in both axes) and drop/keep it per-axis in the
+    # boundary slab. sparse(H) carries the open-BC wrap-drop (cross-validated against
+    # open_reference in comparison.jl), so fused-vs-sparse here closes fused-vs-oracle.
+    @testset "2D diagonal hops, open [true, true]" begin
+        H = @lattice_hamiltonian begin
+            L = [3, 4]
+            open = [true, true]
+            (0, 0) -> μ
+            (1, 0) -> tx
+            (-1, 0) -> tx
+            (0, 1) -> ty
+            (0, -1) -> ty
+            (1, 1) -> td
+            (-1, -1) -> td
+            (1, -1) -> ta
+            (-1, 1) -> ta
+            μ = 0.2; tx = -1.0; ty = -0.6; td = 0.15; ta = 0.1
+        end
+        test_fused_against_sparse(H)
+    end
+
+    @testset "2D diagonal hops, mixed open [true, false]" begin
+        H = @lattice_hamiltonian begin
+            L = [3, 4]
+            open = [true, false]
+            (0, 0) -> μ
+            (1, 0) -> tx
+            (-1, 0) -> tx
+            (0, 1) -> ty
+            (0, -1) -> ty
+            (1, 1) -> td
+            (-1, -1) -> td
+            (1, -1) -> ta
+            (-1, 1) -> ta
+            μ = 0.2; tx = -1.0; ty = -0.6; td = 0.15; ta = 0.1
+        end
+        test_fused_against_sparse(H)
+    end
+
+    @testset "2D diagonal hops, mixed open [false, true]" begin
+        H = @lattice_hamiltonian begin
+            L = [3, 4]
+            open = [false, true]
+            (0, 0) -> μ
+            (1, 0) -> tx
+            (-1, 0) -> tx
+            (0, 1) -> ty
+            (0, -1) -> ty
+            (1, 1) -> td
+            (-1, -1) -> td
+            (1, -1) -> ta
+            (-1, 1) -> ta
+            μ = 0.2; tx = -1.0; ty = -0.6; td = 0.15; ta = 0.1
+        end
+        test_fused_against_sparse(H)
+    end
+
+    @testset "2D diagonal hops, larger L=[8,5] open [true,false]" begin
+        # Non-trivial @simd ivdep interior (interior x-range 2:7) with diagonal
+        # boundary slabs around it -- the L=[3,4] cases have a length-1 interior loop,
+        # so this exercises the vectorized interior alongside the diagonal wrap-drop.
+        H = @lattice_hamiltonian begin
+            L = [8, 5]
+            open = [true, false]
+            (0, 0) -> μ
+            (1, 0) -> tx
+            (-1, 0) -> tx
+            (0, 1) -> ty
+            (0, -1) -> ty
+            (1, 1) -> td
+            (-1, -1) -> td
+            (1, -1) -> ta
+            (-1, 1) -> ta
+            μ = 0.2; tx = -1.0; ty = -0.6; td = 0.15; ta = 0.1
+        end
+        test_fused_against_sparse(H)
+    end
+
+    # 3D body-diagonal (1,1,1) crosses THREE axes at once -- the strongest test of the
+    # per-axis wrap-drop and of interior_margins shrinking in all three dims. Includes a
+    # fully-open and a mixed (open x,z / periodic y) case.
+    @testset "3D body-diagonal hops, open [true, true, true]" begin
+        H = @lattice_hamiltonian begin
+            L = [4, 3, 3]
+            open = [true, true, true]
+            (0, 0, 0) -> μ
+            (1, 0, 0) -> tx
+            (-1, 0, 0) -> tx
+            (0, 1, 0) -> ty
+            (0, -1, 0) -> ty
+            (0, 0, 1) -> tz
+            (0, 0, -1) -> tz
+            (1, 1, 1) -> tb
+            (-1, -1, -1) -> tb
+            μ = 0.2; tx = -1.0; ty = -0.6; tz = -0.4; tb = 0.12
+        end
+        test_fused_against_sparse(H)
+    end
+
+    @testset "3D body-diagonal hops, mixed open [true, false, true]" begin
+        H = @lattice_hamiltonian begin
+            L = [4, 3, 3]
+            open = [true, false, true]
+            (0, 0, 0) -> μ
+            (1, 0, 0) -> tx
+            (-1, 0, 0) -> tx
+            (0, 1, 0) -> ty
+            (0, -1, 0) -> ty
+            (0, 0, 1) -> tz
+            (0, 0, -1) -> tz
+            (1, 1, 1) -> tb
+            (-1, -1, -1) -> tb
+            μ = 0.2; tx = -1.0; ty = -0.6; tz = -0.4; tb = 0.12
+        end
+        test_fused_against_sparse(H)
+    end
+
     @testset "3D two-band boundary stress" begin
         H = @lattice_hamiltonian begin
             L = [4, 3, 5]
