@@ -17,6 +17,7 @@ Base.@kwdef struct HamiltonianBuilder{real_dim,lattice_dim}
     T::Dict{LatticeVector{lattice_dim},SparseEntry{LiteralOrSymbolic}}
     d::Int
     L::MVector{lattice_dim,Int}
+    open::MVector{lattice_dim,Bool}
     params::Dict{Symbol,ComplexF64}
 end
 

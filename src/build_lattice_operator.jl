@@ -282,24 +282,30 @@ quote
 end
 ```
 """
-function loop_site_pairs(hops, ex)
+function loop_site_pairs(hops, ex; open = falses(length(hops)))
     quote
         # initialize the indices of the output and input vectors 
         i_out = 0
         i_in = d * $(site_expr(hops))
-        $(loop_site_pairs(hops, ex, length(hops)))
+        $(loop_site_pairs(hops, ex, length(hops); open = open))
     end
 end
 
 """
-    loop_site_pairs(hops, ex, axis)
+    loop_site_pairs(hops, ex, axis; open=falses(axis))
 
 The main method of `loop_site_pairs` works by recursively calling in to this method.
 Each call to this method generates a block of for loops for a single lattice dimension,
 and then calls the next dimension recursively, decreasing `axis` by 1.
 When we have reached the last dimension, we insert the expression `ex` at each site.
+
+`open[axis] == true` treats that dimension as an open boundary: the wrap-around loop is
+dropped (sign-dependent — the wrap is the trailing run for a positive hop, the leading
+run for a negative one) and the dropped loop's index advance is replicated so the net
+per-axis advance is unchanged. The default (all `false`) is periodic. On this branch the
+sparse path reaches this helper; the fused dense path handles open BCs in `fused_site_expr`.
 """
-function loop_site_pairs(hops, ex, axis)
+function loop_site_pairs(hops, ex, axis; open = falses(axis))
     # axis == 1 is the slowest changing lattice dimension
     # axis == 0 corresponds orbital hoppings
     # which should already be handled in the supplied expression
@@ -317,7 +323,7 @@ function loop_site_pairs(hops, ex, axis)
         # just loop over all sites
         return quote
             for $loop_var = 1:L[$axis]
-                $(loop_site_pairs(hops, ex, axis - 1))
+                $(loop_site_pairs(hops, ex, axis - 1; open = open))
             end
         end
     end
@@ -326,23 +332,58 @@ function loop_site_pairs(hops, ex, axis)
     index_after_wrap = hop_range > 0 ? :(L[$axis] - $(hop_range - 1)) : (-hop_range + 1)
     dim_span = dim_span_var(axis)
 
-    quote
-        for $loop_var = 1:$index_before_wrap
-            $(loop_site_pairs(hops, ex, axis - 1))
+    # per-cell advance of i_out/i_in along this axis = span of all inner dimensions
+    stride = axis == 1 ? :d : dim_span_var(axis - 1)
+
+    if open[axis]
+        # Open boundary: the hop crosses the edge for exactly the cells the periodic
+        # code sends through the wrap loop, so we drop that loop. Which loop is the
+        # wrap depends on the sign of the hop: for hop_range > 0 the wrap is the
+        # trailing run, for hop_range < 0 it is the leading run. In both cases we
+        # replicate the dropped loop's i_out/i_in advance so the NET advance across
+        # this axis stays `dim_span` (keeps multi-dimensional bookkeeping aligned).
+        if hop_range > 0
+            quote
+                for $loop_var = 1:$index_before_wrap
+                    $(loop_site_pairs(hops, ex, axis - 1; open = open))
+                end
+                i_out += $hop_range * $stride
+                i_in += $hop_range * $stride
+            end
+        else
+            quote
+                i_out += $(-hop_range) * $stride
+                i_in += $(-hop_range) * $stride
+                i_in -= $dim_span
+                for $loop_var = $index_after_wrap:L[$axis]
+                    $(loop_site_pairs(hops, ex, axis - 1; open = open))
+                end
+                i_in += $dim_span
+            end
         end
-        i_in -= $dim_span
-        for $loop_var = $index_after_wrap:L[$axis]
-            $(loop_site_pairs(hops, ex, axis - 1))
+    else
+        # periodic boundary: sites past the edge wrap to the other end of the axis.
+        quote
+            for $loop_var = 1:$index_before_wrap
+                $(loop_site_pairs(hops, ex, axis - 1; open = open))
+            end
+            i_in -= $dim_span
+            for $loop_var = $index_after_wrap:L[$axis]
+                $(loop_site_pairs(hops, ex, axis - 1; open = open))
+            end
+            i_in += $dim_span
         end
-        i_in += $dim_span
     end
 end
 
 """
-    ham_expr(V, T, dim; sparse=false)
+    ham_expr(V, T, dim; sparse=false, open=falses(dim))
 
 Combine the expressions for the diagonal and hopping terms to generate
 a block of expressions that applies the full Hamiltonian.
+
+`open` is a per-axis `Bool` vector (default all-periodic); a `true` axis is treated as an
+open boundary — the boundary hop is dropped rather than wrapping (see `loop_site_pairs`).
 
 The behavior of the function can be controlled by the `sparse` keyword argument:
 
@@ -356,7 +397,7 @@ When implementing matrix-vector multiplication directly, the incoming and outgoi
 This effectively corresponds to a Kroneker product of the lattice dimensions.
 Because Julia uses column-major ordering, the indices of the multi-dimensional array are ordered fastest to slowest changing: [o, i_1, i_2, ..., i_n] where o is the oribital index and i_1, i_2, ..., i_n are the lattice indices in dimensions 1, 2, ..., n.
 """
-function ham_expr(V, T, dim; sparse = false)
+function ham_expr(V, T, dim; sparse = false, open = falses(dim))
     # since we are flattening the multi-dimensional arrays into 1D arrays,
     # we need to keep track of the stride of the lattice dimensions
     # for each lattice dimension
@@ -389,7 +430,7 @@ function ham_expr(V, T, dim; sparse = false)
     idx = 1
     for (hops, (is, js, hs)) in T
         expr_T = make_hop_expr(is, js, hs, dim; sparse = sparse)
-        expr_hops[idx] = loop_site_pairs(hops, expr_T)
+        expr_hops[idx] = loop_site_pairs(hops, expr_T; open = open)
         idx += 1
     end
 
@@ -465,20 +506,27 @@ function loop_region(ranges, ex, axis = length(ranges))
 end
 
 """
-    fused_site_expr(V, T, dim; boundary, real_values)
+    fused_site_expr(V, T, dim; boundary, real_values, open=falses(dim))
 
 Generate one fused site update. Each output orbital is accumulated in a register:
 the diagonal contribution comes first, followed by hopping contributions in `T`
 iteration order and entry-vector order. Interior sites use precomputed hop offsets;
 boundary sites first construct an explicitly wrapped input index for every hop.
+
+`open` is a per-axis `Bool` vector (default all-periodic) and applies only to boundary
+sites: for a `true` axis, a hop whose input coordinate leaves `[1, L]` is flagged and its
+contribution is dropped for that site (no wrap-around), so open axes have no coupling
+across the boundary. The wrapped index is still computed, keeping the array access in range.
 """
-function fused_site_expr(V, T, dim; boundary, real_values = false)
+function fused_site_expr(V, T, dim; boundary, real_values = false, open = falses(dim))
     site = site_var_vector(dim)
     statements = Expr[]
+    valid_flags = Dict{Int,Symbol}()          # hop_index -> validity flag (open boundaries)
 
     if boundary
         for (hop_index, (hops, _)) in enumerate(T)
             wrapped_coordinates = Any[]
+            valid_terms = Expr[]
             for axis = 1:dim
                 coordinate = Symbol("_m$(hop_index)_$axis")
                 loop_var = site_loop_var(axis)
@@ -495,9 +543,23 @@ function fused_site_expr(V, T, dim; boundary, real_values = false)
                     ),
                 )
                 push!(wrapped_coordinates, coordinate)
+                # Open axis: a hop that leaves [1, L] does NOT wrap around. The wrapped
+                # coordinate above keeps the index in range (never out-of-bounds), and
+                # this flag drops the contribution for that site instead.
+                if open[axis] && hop != 0
+                    push!(valid_terms, :(1 <= $loop_var + $hop <= L[$axis]))
+                end
             end
             input_index = Symbol("_iin$hop_index")
             push!(statements, :($input_index = $(site_linear_index(wrapped_coordinates))))
+            if !isempty(valid_terms)
+                valid_sym = Symbol("_valid$hop_index")
+                push!(
+                    statements,
+                    :($valid_sym = $(reduce((a, b) -> :($a && $b), valid_terms))),
+                )
+                valid_flags[hop_index] = valid_sym
+            end
         end
     end
 
@@ -529,6 +591,9 @@ function fused_site_expr(V, T, dim; boundary, real_values = false)
                     :(real($matrix_value) * ψin[$input_index+$row])
                 else
                     :($matrix_value * ψin[$input_index+$row])
+                end
+                if haskey(valid_flags, hop_index)   # open-boundary hop: drop if out of range
+                    product = :($(valid_flags[hop_index]) ? $product : zero(ComplexF64))
                 end
                 push!(statements, :($accumulator += $product))
             end
@@ -576,19 +641,22 @@ function loop_fused_interior(V, T, dim; real_values = false)
 end
 
 """
-    loop_fused_boundary_slab(V, T, dim, slab_axis)
+    loop_fused_boundary_slab(V, T, dim, slab_axis; open=falses(dim))
 
 Generate one slab of the complement of the fused interior. Earlier coordinates are
 restricted to the interior, `slab_axis` is split into disjoint low/high ranges, and
 later coordinates span the lattice. Using `max(hi + 1, lo)` for the high range also
 partitions the full axis exactly once when that dimension's interior is empty.
+
+`open` (default all-periodic) is forwarded to `fused_site_expr`; `true` axes drop
+hops that leave the lattice at these boundary sites instead of wrapping.
 """
-function loop_fused_boundary_slab(V, T, dim, slab_axis)
+function loop_fused_boundary_slab(V, T, dim, slab_axis; open = falses(dim))
     lower_vars = [Symbol("_lo$axis") for axis = 1:dim]
     upper_vars = [Symbol("_hi$axis") for axis = 1:dim]
     body = quote
         i = $(site_linear_index(site_var_vector(dim)))
-        $(fused_site_expr(V, T, dim; boundary = true))
+        $(fused_site_expr(V, T, dim; boundary = true, open = open))
     end
 
     ranges = Any[
@@ -642,13 +710,17 @@ function all_real_matrix_elements(V, T)
 end
 
 """
-    fused_apply_expr(V, T, dim)
+    fused_apply_expr(V, T, dim; open=falses(dim))
 
 Generate the matrix-free Hamiltonian body as one interior sweep plus ordered,
 pairwise-disjoint boundary slabs. The prelude retains the lattice spans and adds
 one constant linear hop offset and the common interior bounds.
+
+`open` is a per-axis `Bool` vector (default all-periodic). It is passed to the boundary
+slabs only: the interior never crosses a boundary, so it is identical for open and
+periodic; `true` axes drop cross-boundary hops in `fused_site_expr` (no wrap-around).
 """
-function fused_apply_expr(V, T, dim)
+function fused_apply_expr(V, T, dim; open = falses(dim))
     # A `T[hops]` entry `(row, col, value)` means H[(n + hops, row), (n, col)] = value,
     # matching the sparse constructor: `(1) -> t` puts `t` on ⟨n+1|H|n⟩. The fused
     # kernels gather into the output site, so re-key the table by the gather
@@ -687,7 +759,7 @@ function fused_apply_expr(V, T, dim)
             end
         end
     end
-    slabs = [loop_fused_boundary_slab(V, T, dim, axis) for axis = 1:dim]
+    slabs = [loop_fused_boundary_slab(V, T, dim, axis; open = open) for axis = 1:dim]
     Expr(:block, spans..., offsets..., bounds..., interior, slabs...)
 end
 
@@ -715,12 +787,14 @@ function hop_extent_guard(T, dim)
 end
 
 """
-    make_apply(V, T, dim)
+    make_apply(V, T, dim; open=falses(dim))
 
 Generate an `Expr` that defines a function to apply the Hamiltonian
-given parameters for the potential and hopping terms (V and T).
+given parameters for the potential and hopping terms (V and T). `open` is a per-axis
+`Bool` vector (default all-periodic); `true` marks an axis as open (no wrap-around),
+handled in the fused kernel by `fused_site_expr`.
 """
-function make_apply(V, T, dim)
+function make_apply(V, T, dim; open = falses(dim))
     bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
     quote
         function (
@@ -739,7 +813,7 @@ function make_apply(V, T, dim)
             # see e.g., diag_expr, hop_expr
             @inbounds begin
                 $bindings
-                $(fused_apply_expr(V2, T2, dim))
+                $(fused_apply_expr(V2, T2, dim; open = open))
             end
         end
     end
@@ -748,16 +822,17 @@ end
 function make_apply(
     builder::HamiltonianBuilder{real_dim,lattice_dim},
 ) where {real_dim,lattice_dim}
-    make_apply(builder.V, builder.T, lattice_dim)
+    make_apply(builder.V, builder.T, lattice_dim; open = builder.open)
 end
 
 """
-    make_sparse(V, T, dim)
+    make_sparse(V, T, dim; open=falses(dim))
 
 Generate an `Expr` that defines a function to construct the sparse matrix representation
-of the Hamiltonian given parameters for the potential and hopping terms (V and T).
+of the Hamiltonian given parameters for the potential and hopping terms (V and T). `open`
+is a per-axis `Bool` vector (default all-periodic); `true` marks an axis as open.
 """
-function make_sparse(V, T, dim)
+function make_sparse(V, T, dim; open = falses(dim))
     bindings, V2, T2 = hoist_matrix_elements(V, T, dim)
     per_cell_count = bound_nonzero(1, length(V), T)
     quote
@@ -773,7 +848,7 @@ function make_sparse(V, T, dim)
 
             idx = 1
             @inbounds begin
-                $(ham_expr(V2, T2, dim; sparse = true))
+                $(ham_expr(V2, T2, dim; sparse = true, open = open))
             end
             idx -= 1
 
@@ -793,5 +868,5 @@ end
 function make_sparse(
     builder::HamiltonianBuilder{real_dim,lattice_dim},
 ) where {real_dim,lattice_dim}
-    make_sparse(builder.V, builder.T, lattice_dim)
+    make_sparse(builder.V, builder.T, lattice_dim; open = builder.open)
 end
