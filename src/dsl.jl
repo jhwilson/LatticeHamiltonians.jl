@@ -27,6 +27,7 @@ function parse_lattice_dsl(input)
     exprL = :()
     exprV = :()
     exprd = :()
+    exprOpen = nothing
     hops = Vector{Expr}()  # Store all hopping expressions in a vector
     params = Dict{Symbol,ComplexF64}() #Initialize dictionary
 
@@ -38,6 +39,11 @@ function parse_lattice_dsl(input)
         end
         if ex.args[1] == :L
             exprL = ex
+        elseif ex.args[1] == :open
+            # boundary-condition flags — special-cased like L so the vector does not
+            # fall into the scalar `params` dict (which would try to store it as a
+            # ComplexF64 and error).
+            exprOpen = ex
         elseif ex.head == :(->)
             # seperate out the onsite hopping matrix
             # as it requires special handling
@@ -83,7 +89,21 @@ function parse_lattice_dsl(input)
       T[onsite(lattice_dim)] = onsite_hops
     end
 
-    HamiltonianBuilder{lattice_dim, lattice_dim}(;params=params, L=L, V=V, T=T, d=d)
+    # Boundary conditions: default every axis to periodic (false) for backward
+    # compatibility; `true` opts an axis into open boundaries.
+    open = if isnothing(exprOpen)
+        falses(lattice_dim)
+    else
+        ovec = Vector{Bool}(exprOpen.args[2].args)
+        length(ovec) == lattice_dim || error(
+            "Invalid input. `open` must have length $(lattice_dim) " *
+            "(one Bool per lattice dimension; true = open, false = periodic).",
+        )
+        ovec
+    end
+    open = MVector{lattice_dim,Bool}(open)
+
+    HamiltonianBuilder{lattice_dim, lattice_dim}(;params=params, L=L, V=V, T=T, d=d, open=open)
 end
 
 """
