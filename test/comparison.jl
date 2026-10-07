@@ -268,3 +268,93 @@ end
     end)
     @test H_zopen == open_reference(Hp, [3, 3, 3], 2, [false, false, true])
 end
+
+@testset "2D open BCs with COMPLEX, NON-DIAGONAL hops (L = [3, 4])" begin
+    # Gap: open BCs were only exercised with real / diagonal blocks.
+    Hp = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        (0, 0)  -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+        (1, 0)  -> [0.5 0.3im; 0.4 0.5]
+        (-1, 0) -> [0.5 0.4; -0.3im 0.5]
+        (0, 1)  -> [0.3 0.1+0.2im; 0.0 0.3]
+        (0, -1) -> [0.3 0.0; 0.1-0.2im 0.3]
+    end)
+    @test ishermitian(Hp)
+    @test open_reference(Hp, [3, 4], 2, [false, false]) == Hp         # sanity: nothing removed
+
+    H_tt = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        open = [true, true]
+        (0, 0)  -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+        (1, 0)  -> [0.5 0.3im; 0.4 0.5]
+        (-1, 0) -> [0.5 0.4; -0.3im 0.5]
+        (0, 1)  -> [0.3 0.1+0.2im; 0.0 0.3]
+        (0, -1) -> [0.3 0.0; 0.1-0.2im 0.3]
+    end)
+    @test H_tt == open_reference(Hp, [3, 4], 2, [true, true])
+
+    H_tf = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        open = [true, false]
+        (0, 0)  -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+        (1, 0)  -> [0.5 0.3im; 0.4 0.5]
+        (-1, 0) -> [0.5 0.4; -0.3im 0.5]
+        (0, 1)  -> [0.3 0.1+0.2im; 0.0 0.3]
+        (0, -1) -> [0.3 0.0; 0.1-0.2im 0.3]
+    end)
+    @test H_tf == open_reference(Hp, [3, 4], 2, [true, false])
+
+    H_ft = sparse(@lattice_hamiltonian begin
+        L = [3, 4]
+        open = [false, true]
+        (0, 0)  -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+        (1, 0)  -> [0.5 0.3im; 0.4 0.5]
+        (-1, 0) -> [0.5 0.4; -0.3im 0.5]
+        (0, 1)  -> [0.3 0.1+0.2im; 0.0 0.3]
+        (0, -1) -> [0.3 0.0; 0.1-0.2im 0.3]
+    end)
+    @test H_ft == open_reference(Hp, [3, 4], 2, [false, true])
+end
+
+@testset "3D open BCs with COMPLEX, NON-DIAGONAL hops (L = [3, 3, 3])" begin
+    # Gap: open BCs were only exercised with real / diagonal blocks.
+    Hp = sparse(@lattice_hamiltonian begin
+        L = [3, 3, 3]
+        (0, 0, 0)  -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+        (1, 0, 0)  -> [0.5 0.3im; 0.4 0.5]
+        (-1, 0, 0) -> [0.5 0.4; -0.3im 0.5]
+        (0, 1, 0)  -> [0.3 0.1+0.2im; 0.0 0.3]
+        (0, -1, 0) -> [0.3 0.0; 0.1-0.2im 0.3]
+        (0, 0, 1)  -> [0.25 0.05-0.15im; 0.2im 0.25]
+        (0, 0, -1) -> [0.25 -0.2im; 0.05+0.15im 0.25]
+    end)
+    @test ishermitian(Hp)
+    @test open_reference(Hp, [3, 3, 3], 2, [false, false, false]) == Hp
+
+    H_ttt = sparse(@lattice_hamiltonian begin
+        L = [3, 3, 3]
+        open = [true, true, true]
+        (0, 0, 0)  -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+        (1, 0, 0)  -> [0.5 0.3im; 0.4 0.5]
+        (-1, 0, 0) -> [0.5 0.4; -0.3im 0.5]
+        (0, 1, 0)  -> [0.3 0.1+0.2im; 0.0 0.3]
+        (0, -1, 0) -> [0.3 0.0; 0.1-0.2im 0.3]
+        (0, 0, 1)  -> [0.25 0.05-0.15im; 0.2im 0.25]
+        (0, 0, -1) -> [0.25 -0.2im; 0.05+0.15im 0.25]
+    end)
+    @test H_ttt == open_reference(Hp, [3, 3, 3], 2, [true, true, true])
+
+    # slowest-axis-open only: the open-z slab geometry.
+    H_z = sparse(@lattice_hamiltonian begin
+        L = [3, 3, 3]
+        open = [false, false, true]
+        (0, 0, 0)  -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+        (1, 0, 0)  -> [0.5 0.3im; 0.4 0.5]
+        (-1, 0, 0) -> [0.5 0.4; -0.3im 0.5]
+        (0, 1, 0)  -> [0.3 0.1+0.2im; 0.0 0.3]
+        (0, -1, 0) -> [0.3 0.0; 0.1-0.2im 0.3]
+        (0, 0, 1)  -> [0.25 0.05-0.15im; 0.2im 0.25]
+        (0, 0, -1) -> [0.25 -0.2im; 0.05+0.15im 0.25]
+    end)
+    @test H_z == open_reference(Hp, [3, 3, 3], 2, [false, false, true])
+end
