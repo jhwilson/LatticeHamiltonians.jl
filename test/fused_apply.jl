@@ -261,4 +261,88 @@ end
         end
         test_fused_against_sparse(H)
     end
+
+    # Gap: open BCs were only exercised with real / diagonal blocks.
+    @testset "2D complex non-diagonal hops, open [true, true]" begin
+        H = @lattice_hamiltonian begin
+            L = [3, 4]
+            open = [true, true]
+            (0, 0) -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+            (1, 0) -> [0.5 0.3im; 0.4 0.5]
+            (-1, 0) -> [0.5 0.4; -0.3im 0.5]
+            (0, 1) -> [0.3 0.1+0.2im; 0.0 0.3]
+            (0, -1) -> [0.3 0.0; 0.1-0.2im 0.3]
+        end
+        test_fused_against_sparse(H)
+    end
+
+    @testset "2D complex non-diagonal hops, mixed open [true, false]" begin
+        H = @lattice_hamiltonian begin
+            L = [3, 4]
+            open = [true, false]
+            (0, 0) -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+            (1, 0) -> [0.5 0.3im; 0.4 0.5]
+            (-1, 0) -> [0.5 0.4; -0.3im 0.5]
+            (0, 1) -> [0.3 0.1+0.2im; 0.0 0.3]
+            (0, -1) -> [0.3 0.0; 0.1-0.2im 0.3]
+        end
+        test_fused_against_sparse(H)
+    end
+
+    @testset "2D complex non-diagonal hops, mixed open [false, true]" begin
+        H = @lattice_hamiltonian begin
+            L = [3, 4]
+            open = [false, true]
+            (0, 0) -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+            (1, 0) -> [0.5 0.3im; 0.4 0.5]
+            (-1, 0) -> [0.5 0.4; -0.3im 0.5]
+            (0, 1) -> [0.3 0.1+0.2im; 0.0 0.3]
+            (0, -1) -> [0.3 0.0; 0.1-0.2im 0.3]
+        end
+        test_fused_against_sparse(H)
+    end
+
+    @testset "2D complex non-diagonal hops, larger L=[8,5] open [true, false]" begin
+        H = @lattice_hamiltonian begin
+            L = [8, 5]
+            open = [true, false]
+            (0, 0) -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+            (1, 0) -> [0.5 0.3im; 0.4 0.5]
+            (-1, 0) -> [0.5 0.4; -0.3im 0.5]
+            (0, 1) -> [0.3 0.1+0.2im; 0.0 0.3]
+            (0, -1) -> [0.3 0.0; 0.1-0.2im 0.3]
+        end
+        test_fused_against_sparse(H)
+    end
+
+    @testset "3D complex non-diagonal hops, open [true, true, true]" begin
+        H = @lattice_hamiltonian begin
+            L = [3, 3, 3]
+            open = [true, true, true]
+            (0, 0, 0) -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+            (1, 0, 0) -> [0.5 0.3im; 0.4 0.5]
+            (-1, 0, 0) -> [0.5 0.4; -0.3im 0.5]
+            (0, 1, 0) -> [0.3 0.1+0.2im; 0.0 0.3]
+            (0, -1, 0) -> [0.3 0.0; 0.1-0.2im 0.3]
+            (0, 0, 1) -> [0.25 0.05-0.15im; 0.2im 0.25]
+            (0, 0, -1) -> [0.25 -0.2im; 0.05+0.15im 0.25]
+        end
+        test_fused_against_sparse(H)
+    end
+
+    # slowest-axis-open only: the open-z slab geometry.
+    @testset "3D complex non-diagonal hops, open-z slab [false, false, true]" begin
+        H = @lattice_hamiltonian begin
+            L = [3, 3, 3]
+            open = [false, false, true]
+            (0, 0, 0) -> [1.0 0.2+0.1im; 0.2-0.1im -1.0]
+            (1, 0, 0) -> [0.5 0.3im; 0.4 0.5]
+            (-1, 0, 0) -> [0.5 0.4; -0.3im 0.5]
+            (0, 1, 0) -> [0.3 0.1+0.2im; 0.0 0.3]
+            (0, -1, 0) -> [0.3 0.0; 0.1-0.2im 0.3]
+            (0, 0, 1) -> [0.25 0.05-0.15im; 0.2im 0.25]
+            (0, 0, -1) -> [0.25 -0.2im; 0.05+0.15im 0.25]
+        end
+        test_fused_against_sparse(H)
+    end
 end
